@@ -1,4 +1,8 @@
 __pycache__/
 *.pyc
 data_cache/
+data_cache_100d/
+financials_cache/
+profiles_cache/
+daily_mcap_pb_cache/
 .workbuddy/

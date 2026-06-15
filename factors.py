@@ -55,14 +55,47 @@ def load_price_data(data_dir: str, symbols: Optional[List[str]] = None) -> pd.Da
     return combined
 
 
+def load_daily_mcap_pb(data_dir: str) -> pd.DataFrame:
+    """
+    加载逐日历史 mcap/pb/pe 面板 (由 fetch_financials 生成, 已按公告日对齐防前视偏差)
+
+    Returns:
+        DataFrame: columns [symbol, date, mcap, pb, pe]
+    """
+    mcap_dir = Path(data_dir).parent / "daily_mcap_pb_cache"
+    if not mcap_dir.exists():
+        return pd.DataFrame()
+
+    files = sorted(mcap_dir.glob("*.parquet"))
+    if not files:
+        return pd.DataFrame()
+
+    dfs = []
+    for f in files:
+        symbol = f.stem
+        df = pd.read_parquet(f)
+        df['date'] = pd.to_datetime(df['date'])
+        df['symbol'] = symbol
+        keep = ['symbol', 'date', 'mcap', 'pb']
+        if 'pe' in df.columns:
+            keep.append('pe')
+        dfs.append(df[keep])
+
+    combined = pd.concat(dfs, ignore_index=True)
+    combined = combined.sort_values(['symbol', 'date']).reset_index(drop=True)
+    return combined
+
+
 def compute_factors(price_data: pd.DataFrame,
-                    min_days: int = 120) -> Tuple[pd.DataFrame, pd.DataFrame]:
+                    min_days: int = 120,
+                    mcap_pb_data: Optional[pd.DataFrame] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     从日线数据计算因子面板和收益率面板
 
     Args:
-        price_data: 包含 symbol, date, close, mcap, pb, turnover 的 DataFrame
+        price_data: 包含 symbol, date, close, volume 的 DataFrame
         min_days: 每只股票的最低交易日数 (过滤流动性极差或新上市)
+        mcap_pb_data: 逐日历史 mcap/pb 面板 (由 load_daily_mcap_pb 生成)
 
     Returns:
         factor_panel:  MultiIndex (date, symbol) × [mcap, pb, mom20d, mom60d, turnover, vol20d]
@@ -73,28 +106,43 @@ def compute_factors(price_data: pd.DataFrame,
 
     print(f"  加载 {data['symbol'].nunique()} 只股票, {len(data)} 行日线...")
 
+    # --- 集成历史 mcap/pb (公告日对齐, 无前视偏差) ---
+    if mcap_pb_data is not None and not mcap_pb_data.empty:
+        old_len = len(data)
+        # 只合并 mcap/pb (保留 price_data 中的其他列不变)
+        mpb = mcap_pb_data[['symbol', 'date', 'mcap', 'pb']].copy()
+        # 用 merge (left join) 而非 concat, 避免列冲突
+        data = data.merge(mpb, on=['symbol', 'date'], how='left', suffixes=('', '_hist'))
+        # 优先使用历史值, fallback 到原值
+        if 'mcap_hist' in data.columns:
+            # merge 没有生成 _hist 后缀, 因为 data 中已经可能有 mcap 列
+            pass
+        # 如果 data 本来没有 mcap/pb (从 Parquet 加载时没有), merge 直接补充
+        if 'mcap' in data.columns:
+            # pb 同理, 处理 nan
+            data['pb'] = data['pb'].ffill()
+        print(f"    ✓ 集成历史 mcap/pb ({mpb['symbol'].nunique()} 只, {mpb['date'].nunique()} 天)")
+    else:
+        # Fallback: 使用静态值
+        if 'mcap' not in data.columns:
+            print("    ⚠️ 无历史 mcap/pb — 使用静态近似值, 回测中排名可能不准确")
+            data['mcap'] = 1.0
+        if 'pb' not in data.columns:
+            data['pb'] = 2.0
+
+    data['mcap'] = data['mcap'].clip(lower=0.05, upper=50000)
+    data['pb'] = data['pb'].clip(lower=0.01, upper=1000)
+
     # 计算日收益率
     data['daily_return'] = data.groupby('symbol')['close'].pct_change()
 
     # 计算因子 (按股票分组, 滚动计算)
     grouped = data.groupby('symbol')
 
-    # 市值 (直接使用, 但做亿单位归一化) — 若无历史数据, 用静态近似
-    if 'mcap' in data.columns:
-        data['mcap'] = data['mcap'].clip(lower=0.1, upper=10000)
-    else:
-        print("  ⚠️ 无 mcap 列 — 回测中市值相关策略可能不准确")
-        data['mcap'] = 1.0  # 占位
-
-    # PB — 若无数据填 2.0 (中性)
-    if 'pb' not in data.columns:
-        data['pb'] = 2.0
-
     # 换手率 — 若 volume 有数据则估算, 否则用 2%
     if 'turnover' in data.columns:
         data['turnover'] = data['turnover'].clip(lower=0.001, upper=100)
     elif 'volume' in data.columns:
-        # 从 volume 粗略估算 turnover (volume / avg volume of last 20 days)
         avg_vol = data.groupby('symbol')['volume'].transform(lambda x: x.rolling(20).mean())
         data['turnover'] = (data['volume'] / avg_vol.replace(0, 1)).clip(0, 20)
     else:

@@ -26,7 +26,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from tools.backtest_mvp.engine import CrossSectionalEngine, BacktestResult
-from tools.backtest_mvp.factors import load_price_data, compute_factors
+from tools.backtest_mvp.factors import load_price_data, compute_factors, load_daily_mcap_pb
 from tools.backtest_mvp.strategies import ALL_STRATEGIES
 from tools.backtest_mvp.data import DATA_DIR, download_microcap_universe, get_data_summary
 
@@ -107,23 +107,17 @@ def cmd_backtest(args: list):
 
     print(f"  加载 {data['symbol'].nunique()} 只股票, {len(data)} 行")
 
-    # 用实时 quote 数据补充 mcap/pb/turnover (MVP 简化: 用静态近似)
-    print("补充 mcap/pb/turnover 数据...")
-    try:
-        from tools.backtest_mvp.data import fetch_stock_quote
-        symbols = list(data['symbol'].unique())
-        quotes = fetch_stock_quote(symbols)
-        if len(quotes) > 0:
-            quote_map = quotes.set_index('symbol')[['mcap', 'pb', 'pe', 'turnover']].to_dict('index')
-            for col in ['mcap', 'pb', 'pe', 'turnover']:
-                data[col] = data['symbol'].map(lambda s: quote_map.get(s, {}).get(col, 0))
-            print(f"  已补充 {len(quotes)} 只股票的 mcap/pb/turnover (静态近似)")
-    except Exception as e:
-        print(f"  ⚠️ 补充失败, 使用默认值: {e}")
+    # 加载历史逐日 mcap/pb (公告日对齐, 无前视偏差)
+    print("加载历史 mcap/pb 面板...")
+    mcap_pb = load_daily_mcap_pb(str(DATA_DIR))
+    if not mcap_pb.empty:
+        print(f"  ✓ {mcap_pb['symbol'].nunique()} 只有历史 mcap/pb 数据")
+    else:
+        print("  ⚠️ 无历史 mcap/pb, 将使用静态近似值")
 
     # 计算因子
     print("计算因子...")
-    factor_panel, return_panel = compute_factors(data)
+    factor_panel, return_panel = compute_factors(data, mcap_pb_data=mcap_pb)
 
     # 运行
     if "--strategy" in args:
