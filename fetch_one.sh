@@ -30,29 +30,74 @@ em_code = f'{symbol}.SZ' if symbol.startswith(('0','3','4','9')) else f'{symbol}
 
 status = []
 
-# --- Step 1: 财务指标 ---
+# --- Step 1: 财务指标 (主源: 东财 EM, 北交所 fallback: 同花顺 THS) ---
 cache_path = FINANCIALS_CACHE / f'{symbol_raw}.parquet'
 fin_ok = False
 if not cache_path.exists():
+    # --- 1a: 尝试东财 EM 接口 ---
+    df = None
+    source = ''
     try:
         df = ak.stock_financial_analysis_indicator_em(symbol=em_code, indicator='按报告期')
-        keep = ['REPORT_DATE','NOTICE_DATE','BPS','EPSJB','TOTALOPERATEREVE','PARENTNETPROFIT','ROEJQ']
-        available = [c for c in keep if c in df.columns]
-        result = df[available].copy()
-        rename = {'REPORT_DATE':'report_date','NOTICE_DATE':'notice_date','BPS':'bps','EPSJB':'eps','TOTALOPERATEREVE':'revenue','PARENTNETPROFIT':'net_profit','ROEJQ':'roe'}
-        result.columns = [rename.get(c,c) for c in available]
-        result['report_date'] = pd.to_datetime(result['report_date'], errors='coerce')
-        result['notice_date'] = pd.to_datetime(result['notice_date'], errors='coerce')
-        for col in ['bps','eps','revenue','net_profit','roe']:
-            if col in result.columns:
-                result[col] = pd.to_numeric(result[col], errors='coerce')
-        result = result.sort_values('report_date').reset_index(drop=True)
-        result['symbol'] = symbol_raw
-        result.to_parquet(cache_path, index=False)
-        fin_ok = True
-        status.append(f'fin={len(result)}Q')
-    except Exception as e:
-        status.append(f'fin_fail={str(e)[:60]}')
+        source = 'EM'
+    except:
+        pass
+
+    # --- 1b: 北交所 fallback (同花顺 THS) ---
+    if df is None and symbol_raw.startswith('bj'):
+        try:
+            df = ak.stock_financial_abstract_ths(symbol=symbol, indicator='按报告期')
+            source = 'THS'
+        except:
+            pass
+
+    # --- 解析 ---
+    if df is not None and len(df) > 0:
+        try:
+            if source == 'EM':
+                keep = ['REPORT_DATE','NOTICE_DATE','BPS','EPSJB','TOTALOPERATEREVE','PARENTNETPROFIT','ROEJQ']
+                available = [c for c in keep if c in df.columns]
+                result = df[available].copy()
+                rename = {'REPORT_DATE':'report_date','NOTICE_DATE':'notice_date','BPS':'bps','EPSJB':'eps','TOTALOPERATEREVE':'revenue','PARENTNETPROFIT':'net_profit','ROEJQ':'roe'}
+            else:  # THS
+                # 同花顺返回全 object 列, 需要手动提取和清洗
+                keep = ['报告期','基本每股收益','每股净资产','净利润','营业总收入','净资产收益率']
+                available = [c for c in keep if c in df.columns]
+                result = df[available].copy()
+                rename = {'报告期':'report_date','基本每股收益':'eps','每股净资产':'bps','净利润':'net_profit','营业总收入':'revenue','净资产收益率':'roe'}
+                # 全部列转为字符串再解析, 避免 bool 混入
+                for c in result.columns:
+                    result[c] = result[c].astype(str).replace({'False': '', 'True': '', 'nan': ''})
+                result.columns = [rename.get(c,c) for c in available]
+                # 净利润/营收可能有单位 (万/亿), 归一化到 元
+                for col, unit_col in [('net_profit','net_profit'), ('revenue','revenue')]:
+                    if col in result.columns:
+                        raw = result[col].str.extract(r'([\d.-]+)\s*(万|亿)?')
+                        nums = pd.to_numeric(raw[0], errors='coerce')
+                        unit = raw[1].fillna('')
+                        nums = nums.where(unit != '万', nums * 10000)
+                        nums = nums.where(unit != '亿', nums * 100000000)
+                        result[col] = nums
+            result.columns = [rename.get(c,c) for c in available]
+            result['report_date'] = pd.to_datetime(result['report_date'], errors='coerce')
+            # THS 无公告日 → 报告期+120天 (监管上限, 保守防前视偏差)
+            if source == 'THS':
+                result['notice_date'] = result['report_date'] + pd.DateOffset(days=120)
+            else:
+                result['notice_date'] = pd.to_datetime(result['notice_date'], errors='coerce')
+            for col in ['bps','eps','revenue','net_profit','roe']:
+                if col in result.columns:
+                    result[col] = pd.to_numeric(result[col], errors='coerce')
+            result = result.sort_values('report_date').reset_index(drop=True)
+            result['symbol'] = symbol_raw
+            result['source'] = source
+            result.to_parquet(cache_path, index=False)
+            fin_ok = True
+            status.append(f'fin={len(result)}Q({source})')
+        except Exception as e:
+            status.append(f'fin_parse_fail={str(e)[:40]}')
+    else:
+        status.append('fin_empty')
 else:
     df = pd.read_parquet(cache_path)
     fin_ok = True
