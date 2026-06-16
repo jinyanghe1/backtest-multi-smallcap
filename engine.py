@@ -250,9 +250,16 @@ class CrossSectionalEngine:
                 portfolio_return = (r.fillna(0) * weight).sum()
                 period_returns.loc[date] = r.fillna(0).values
 
-                # 滑点
-                portfolio_return -= self.slippage * len(picked) / (
-                    len(picked) * 252 / len(self.rebalance_dates))
+                # 滑点 (仅在调仓日: 反映买卖冲击成本)
+                if j == 0:
+                    new_picked = set(picked)
+                    old_picked = set()
+                    if i > 0:
+                        prev_key = pd.Timestamp(self.rebalance_dates[i - 1])
+                        if prev_key in positions_log:
+                            old_picked = set(positions_log[prev_key].keys())
+                    replaced_frac = len(new_picked - old_picked) / max(len(picked), 1)
+                    portfolio_return -= self.slippage * replaced_frac
 
                 # 更新权益
                 equity *= (1 + portfolio_return)

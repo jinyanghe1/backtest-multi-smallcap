@@ -102,7 +102,7 @@ def momentum_turnover_filter(snapshot: pd.DataFrame, dates, step: int) -> List[s
         return []
     sub = snapshot.loc[stocks]
     if 'turnover' in sub.columns:
-        sub = sub[sub['turnover'] > 3]  # 日换手 > 3%
+        sub = sub[sub['turnover'] > 1.5]  # 相对量比 > 1.5x (高于均值 50%)
     if 'pe' in sub.columns:
         sub = sub[sub['pe'] > -50]  # 排除巨额亏损
     return list(sub.index)
@@ -148,9 +148,9 @@ def ipo_resonance_filter(snapshot: pd.DataFrame, dates, step: int) -> List[str]:
     if len(stocks) == 0:
         return []
     sub = snapshot.loc[stocks]
-    # 高换手作为次新/活跃代理变量 (真实系统中会用 IPO 日期)
+    # 高换手作为次新/活跃代理变量 (turnover = 相对量比, median≈0.82)
     if 'turnover' in sub.columns:
-        sub = sub[sub['turnover'] > 5]  # 日换手 > 5%
+        sub = sub[sub['turnover'] > 2.0]  # 量比 > 2x 均值 (活跃次新)
     return list(sub.index)
 
 strategy_ipo = {

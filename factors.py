@@ -2,12 +2,14 @@
 因子计算模块
 =============
 根据日线 OHLCV 数据计算截面因子:
-  mcap     - 总市值 (亿元)
-  pb       - 市净率
+  name     - 股票名称 (用于 ST 检测)
+  mcap     - 总市值 (亿元), 来源于逐日 daily_mcap_pb_cache
+  pb       - 市净率, 来源于逐日 daily_mcap_pb_cache (公告日对齐, 防前视偏差)
   mom20d   - 近 20 日收益率
   mom60d   - 近 60 日收益率
-  turnover - 换手率 (%)
-  vol20d   - 近 20 日波动率 (%)
+  turnover - 相对量比 (volume / avg_vol_20d, 1.0=均值, 不是换手率%)
+  vol20d   - 近 20 日波动率 (年化)
+  is_limit_up/down - 涨跌停标记
 
 输入: Parquet 文件目录, 每只股票一个文件 (date, open, high, low, close, volume, mcap, pb, turnover)
 输出:
@@ -133,6 +135,15 @@ def compute_factors(price_data: pd.DataFrame,
     data['mcap'] = data['mcap'].clip(lower=0.05, upper=50000)
     data['pb'] = data['pb'].clip(lower=0.01, upper=1000)
 
+    # 集成名称 (用于 ST 过滤)
+    name_lookup_path = Path(__file__).parent / "name_lookup.parquet"
+    if name_lookup_path.exists():
+        names = pd.read_parquet(name_lookup_path)
+        data['name'] = data['symbol'].map(names['name']).fillna('')
+        print(f"    ✓ 集成股票名称 ({names['name'].notna().sum()} 条)")
+    else:
+        data['name'] = ''
+
     # 计算日收益率
     data['daily_return'] = data.groupby('symbol')['close'].pct_change()
 
@@ -194,7 +205,7 @@ def compute_factors(price_data: pd.DataFrame,
     print(f"  过滤后: {len(valid_symbols)} 只股票, {len(data)} 行 (≥{min_days}天交易)")
 
     # --- 构建因子面板 (MultiIndex) ---
-    factor_cols = ['mcap', 'pb', 'mom20d', 'mom60d', 'turnover', 'vol20d',
+    factor_cols = ['name', 'mcap', 'pb', 'mom20d', 'mom60d', 'turnover', 'vol20d',
                    'is_limit_up', 'is_limit_down']
     available_cols = [c for c in factor_cols if c in data.columns]
 
