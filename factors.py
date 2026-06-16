@@ -112,7 +112,10 @@ def compute_factors(price_data: pd.DataFrame,
     if mcap_pb_data is not None and not mcap_pb_data.empty:
         old_len = len(data)
         # 只合并 mcap/pb (保留 price_data 中的其他列不变)
-        mpb = mcap_pb_data[['symbol', 'date', 'mcap', 'pb']].copy()
+        mpb_cols = ['symbol', 'date', 'mcap', 'pb']
+        if 'pe' in mcap_pb_data.columns:
+            mpb_cols.append('pe')
+        mpb = mcap_pb_data[mpb_cols].copy()
         # 用 merge (left join) 而非 concat, 避免列冲突
         data = data.merge(mpb, on=['symbol', 'date'], how='left', suffixes=('', '_hist'))
         # 优先使用历史值, fallback 到原值
@@ -134,6 +137,8 @@ def compute_factors(price_data: pd.DataFrame,
 
     data['mcap'] = data['mcap'].clip(lower=0.05, upper=50000)
     data['pb'] = data['pb'].clip(lower=0.01, upper=1000)
+    if 'pe' in data.columns:
+        data['pe'] = data['pe'].clip(lower=-10000, upper=10000)  # PE 极端值截断
 
     # 集成名称 (用于 ST 过滤)
     name_lookup_path = Path(__file__).parent / "name_lookup.parquet"
@@ -205,7 +210,7 @@ def compute_factors(price_data: pd.DataFrame,
     print(f"  过滤后: {len(valid_symbols)} 只股票, {len(data)} 行 (≥{min_days}天交易)")
 
     # --- 构建因子面板 (MultiIndex) ---
-    factor_cols = ['name', 'mcap', 'pb', 'mom20d', 'mom60d', 'turnover', 'vol20d',
+    factor_cols = ['name', 'mcap', 'pb', 'pe', 'mom20d', 'mom60d', 'turnover', 'vol20d',
                    'is_limit_up', 'is_limit_down']
     available_cols = [c for c in factor_cols if c in data.columns]
 

@@ -48,12 +48,10 @@ def filter_low_pb(snapshot: pd.DataFrame, dates, step: int,
 
 
 def filter_liquid(snapshot: pd.DataFrame, dates, step: int,
-                  min_amount: float = 200) -> List[str]:
-    """过滤: 日均成交 > min_amount 万元"""
-    if 'turnover' in snapshot.columns and 'mcap' in snapshot.columns:
-        # 用换手率 × 市值估算成交额
-        amount = snapshot['turnover'] * snapshot['mcap'] * 100  # 万元
-        return snapshot[amount > min_amount].index.tolist()
+                  min_rel_vol: float = 1.0) -> List[str]:
+    """过滤: 相对量比 > min_rel_vol (1.0=成交等于20日均量, 确保有交易活动)"""
+    if 'turnover' in snapshot.columns:
+        return snapshot[snapshot['turnover'] > min_rel_vol].index.tolist()
     return list(snapshot.index)
 
 
