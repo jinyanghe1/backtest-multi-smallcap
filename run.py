@@ -42,6 +42,7 @@ def run_single_backtest(strategy_def: dict, factor_panel: pd.DataFrame,
         rebalance_freq='M',
         commission=0.00125,  # A股: 万2.5 + 千1
         slippage=0.002,
+        price_limit_stocks=True,  # 过滤涨停股 (买不到)
     )
 
     result = engine.run(

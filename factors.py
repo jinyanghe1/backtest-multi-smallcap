@@ -136,6 +136,25 @@ def compute_factors(price_data: pd.DataFrame,
     # 计算日收益率
     data['daily_return'] = data.groupby('symbol')['close'].pct_change()
 
+    # ── 涨跌停检测 (依赖 daily_return 和 close/high/low) ──
+    # 检测逻辑: 涨停 = 收盘接近最高价 + 涨幅接近上限
+    #           跌停 = 收盘接近最低价 + 跌幅接近下限
+    # 阈值: 主板 ±9.5%, 科创板/创业板 ±19.5% (用 0.5% 容差因数据精度)
+    def _limit_threshold(sym: str) -> float:
+        code = sym[2:] if len(sym) > 2 else sym
+        return 0.195 if code.startswith(('68', '300', '301')) else 0.095
+
+    # 分板块计算
+    data['_limit_pct'] = data['symbol'].apply(_limit_threshold)
+    data['is_limit_up'] = (
+        (data['close'] >= data['high'] * 0.995) &
+        (data['daily_return'] > data['_limit_pct'] * 0.95)
+    )
+    data['is_limit_down'] = (
+        (data['close'] <= data['low'] * 1.005) &
+        (data['daily_return'] < -data['_limit_pct'] * 0.95)
+    )
+
     # 计算因子 (按股票分组, 滚动计算)
     grouped = data.groupby('symbol')
 
@@ -175,7 +194,8 @@ def compute_factors(price_data: pd.DataFrame,
     print(f"  过滤后: {len(valid_symbols)} 只股票, {len(data)} 行 (≥{min_days}天交易)")
 
     # --- 构建因子面板 (MultiIndex) ---
-    factor_cols = ['mcap', 'pb', 'mom20d', 'mom60d', 'turnover', 'vol20d']
+    factor_cols = ['mcap', 'pb', 'mom20d', 'mom60d', 'turnover', 'vol20d',
+                   'is_limit_up', 'is_limit_down']
     available_cols = [c for c in factor_cols if c in data.columns]
 
     factor_panel = data.set_index(['date', 'symbol'])[available_cols]

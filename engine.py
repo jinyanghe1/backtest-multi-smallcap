@@ -163,6 +163,7 @@ class CrossSectionalEngine:
         equity_curve = [equity]
         monthly_returns_log = []
         positions_log = {}
+        position_buy_dates: Dict[str, pd.Timestamp] = {}  # T+1 追踪
         turnover_log = []
         current_holdings = {}  # {stock: (buy_price, weight, buy_date)}
         equity_dates = []
@@ -190,20 +191,28 @@ class CrossSectionalEngine:
 
             available_stocks = list(snapshot.index)
 
-            # --- 第 2 步: 过滤 (用户自定义) ---
+            # --- 第 2 步: 过滤 (用户自定义 + 涨跌停) ---
             if universe_filter is not None:
                 selected = universe_filter(snapshot, self.dates, i)
             else:
-                # 默认: 所有股票
                 selected = available_stocks
+
+            # 涨跌停过滤: 排除涨停股 (买不到)
+            if self.price_limit_stocks and 'is_limit_up' in snapshot.columns:
+                limit_up_stocks = set(snapshot[snapshot['is_limit_up'] == True].index)
+                if limit_up_stocks:
+                    selected = [s for s in selected if s not in limit_up_stocks]
 
             # --- 第 3 步: 排名选股 ---
             if ranking_factor in snapshot.columns:
                 valid = snapshot.loc[selected][ranking_factor].dropna()
+                # 涨跌停下递补: 跳过涨停股, 最多递补 n_stocks 只
+                max_pick = self.n_stocks * 2 if self.price_limit_stocks else self.n_stocks
                 if ascending:
-                    picked = valid.nsmallest(self.n_stocks).index.tolist()
+                    ranked = valid.nsmallest(max_pick)
                 else:
-                    picked = valid.nlargest(self.n_stocks).index.tolist()
+                    ranked = valid.nlargest(max_pick)
+                picked = ranked.index[:self.n_stocks].tolist()
             else:
                 picked = selected[:self.n_stocks]
 
@@ -256,6 +265,16 @@ class CrossSectionalEngine:
 
             # --- 第 6 步: 记录持仓和换手 ---
             positions_log[rebal_ts] = {s: weight for s in picked}
+
+            # 记录买入日期 (T+1): 新入场 → rebal_date, 保留 → 原 buy_date
+            for s in picked:
+                if s not in position_buy_dates:
+                    position_buy_dates[s] = rebal_ts
+
+            # 清理已卖出的持仓的 buy_date
+            for s in list(position_buy_dates.keys()):
+                if s not in picked:
+                    del position_buy_dates[s]
 
             # 换手率 (与上月持仓对比)
             if i > 0:
