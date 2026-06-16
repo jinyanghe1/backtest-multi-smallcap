@@ -2,8 +2,12 @@ __pycache__/
 *.pyc
 data_cache/
 data_cache_100d/
+data_cache_hk/
 financials_cache/
 profiles_cache/
 daily_mcap_pb_cache/
+benchmarks/
+shareholders_cache/
+hk_smallcap_list.parquet
 .workbuddy/
 name_lookup.parquet
