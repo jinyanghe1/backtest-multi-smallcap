@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 回测运行器 — CLI + Demo
-=======================
+==
 
 用法:
   # 下载数据
@@ -46,25 +46,28 @@ def run_single_backtest(strategy_def: dict, factor_panel: pd.DataFrame,
         price_limit_stocks=True,  # 过滤涨停股 (买不到)
     )
 
+    # 支持复合排名函数 (ranking_fn) 和单因子排名 (ranking_factor)
     result = engine.run(
         universe_filter=strategy_def["universe_filter"],
         ranking_factor=strategy_def.get("ranking_factor", "mcap"),
         ascending=strategy_def.get("ascending", True),
         composite_factors=strategy_def.get("composite_factors"),
         stop_loss=strategy_def.get("stop_loss"),
+        ranking_fn=strategy_def.get("ranking_fn"),
     )
     return result
 
 
 def print_result_table(name: str, result: BacktestResult):
     """格式化输出单个策略的结果"""
-    print(f"  {name:<24} "
+    print(f"  {name:<30} "
           f"年化 {result.annual_return:>7.2f}%  "
           f"夏普 {result.sharpe_ratio:>6.2f}  "
           f"回撤 {result.max_drawdown:>6.2f}%  "
           f"胜率 {result.win_rate:>5.1f}%  "
           f"换手 {result.avg_turnover:>5.1f}%  "
           f"终值 {result.terminal_value:>6.2f}x")
+
 
 
 def run_all_backtests(factor_panel: pd.DataFrame, return_panel: pd.DataFrame,
@@ -83,7 +86,6 @@ def run_all_backtests(factor_panel: pd.DataFrame, return_panel: pd.DataFrame,
     results = []
     for i, s in enumerate(strategies):
         try:
-            result = run_single_backtest(s, factor_panel, return_panel)
             results.append(result)
             print_result_table(s["name"], result)
         except Exception as e:

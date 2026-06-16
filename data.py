@@ -24,14 +24,15 @@ import subprocess
 import sys
 
 DATA_DIR = Path(__file__).parent / "data_cache"
-WESTOCK_SCRIPT = Path("/Users/hejinyang/.workbuddy/plugins/marketplaces/cb_teams_marketplace/plugins/finance-data/skills/westock-data/scripts/index.js")
+WESTOCK_SCRIPT = Path("/Users/riverosa/.workbuddy/plugins/marketplaces/cb_teams_marketplace/plugins/finance-data/skills/westock-data/scripts/index.js")
+NODE_BIN = Path("/Users/riverosa/.workbuddy/binaries/node/versions/22.22.2/bin/node")
 
 
 def _westock(cmd: str, timeout: int = 60) -> dict:
     """调用 westock-data CLI, 解析 JSON 返回"""
     import subprocess
     result = subprocess.run(
-        ["node", str(WESTOCK_SCRIPT)] + cmd.split(),
+        [str(NODE_BIN), str(WESTOCK_SCRIPT)] + cmd.split(),
         capture_output=True, text=True, timeout=timeout,
         cwd=str(Path(WESTOCK_SCRIPT).parent.parent),
     )
@@ -133,7 +134,7 @@ def fetch_stock_quote(symbols: List[str]) -> pd.DataFrame:
     batch = ",".join(symbols[:20])  # 一次最多 20 只
     try:
         result = subprocess.run(
-            ["node", str(WESTOCK_SCRIPT), "quote", batch],
+            [str(NODE_BIN), str(WESTOCK_SCRIPT), "quote", batch],
             capture_output=True, text=True, timeout=60,
             cwd=str(Path(WESTOCK_SCRIPT).parent.parent),
         )

@@ -1,6 +1,6 @@
 """
 截面回测引擎 — Cross-Sectional Walk-Forward Backtest Engine
-=============================================================
+=====
 设计目标: 支持 A 股微盘股截面策略 (月度排序→选 top N→持有至下次调仓)
 
 核心假设 (你的约束条件):
@@ -145,13 +145,18 @@ class CrossSectionalEngine:
         stop_loss: Optional[float] = None,
         take_profit_stocks: bool = False,
         take_profit_threshold: float = 0.50,
+        ranking_fn: Optional[Callable[[pd.DataFrame], pd.Series]] = None,
     ) -> BacktestResult:
         """
         执行截面回测
 
         Args:
             universe_filter: (factor_snapshot, all_stocks, rebalance_idx) → List[str] 选股函数
-            ranking_factor: 排名因子列名 (单因子模式)
+
+            ranking_factor: 排名因子列名 (单因子模式, 当 ranking_fn 和 composite_factors 都未提供时使用)
+
+            ranking_factor: 排名因子列名 (当 ranking_fn 为 None 时使用)
+
             ascending: True=升序(选最小) | False=降序(选最大)
             composite_factors: [(factor_name, ascending), ...] 多因子z-score复合排名,
                               例如 [('mcap', True), ('pb', True), ('max_ret', False)]
@@ -159,6 +164,8 @@ class CrossSectionalEngine:
             stop_loss: 组合层面止损 (-0.20 表示跌破初始的 80% 清仓)
             take_profit_stocks: 是否对个股启用止盈
             take_profit_threshold: 个股止盈阈值 (相对于买入价)
+            ranking_fn: 复合排名函数 (factor_snapshot → pd.Series), 返回每只股票的综合评分
+                        如果提供了 ranking_fn, 将忽略 ranking_factor 和 ascending
 
         Returns:
             BacktestResult 对象
@@ -201,20 +208,28 @@ class CrossSectionalEngine:
             else:
                 selected = available_stocks
 
+
             # 涨跌停过滤: 排除涨停股 (买不到)
             if self.price_limit_stocks and 'is_limit_up' in snapshot.columns:
                 limit_up_stocks = set(snapshot[snapshot['is_limit_up'] == True].index)
                 if limit_up_stocks:
                     selected = [s for s in selected if s not in limit_up_stocks]
 
-            # --- 第 3 步: 排名选股 (单因子 or 多因子复合) ---
-            if composite_factors is not None:
+            # --- 第 3 步: 排名选股 (ranking_fn > composite_factors > ranking_factor) ---
+            max_pick = self.n_stocks * 2 if self.price_limit_stocks else self.n_stocks
+            picked = selected[:self.n_stocks]  # fallback
+
+            if ranking_fn is not None:
+                # 复合排名函数 (callable)
+                scores = ranking_fn(snapshot.loc[selected])
+                valid = scores.dropna()
+                if len(valid) > 0:
+                    picked = valid.nlargest(self.n_stocks).index.tolist()
+            elif composite_factors is not None:
                 # 多因子 z-score 复合排名
                 factor_names = [f for f, _ in composite_factors]
                 available = [f for f in factor_names if f in snapshot.columns]
-                if len(available) == 0:
-                    picked = selected[:self.n_stocks]
-                else:
+                if len(available) > 0:
                     sub = snapshot.loc[selected][available].copy()
                     for col in available:
                         mean_val = sub[col].mean()
@@ -223,16 +238,19 @@ class CrossSectionalEngine:
                             sub[col] = (sub[col] - mean_val) / std_val
                         else:
                             sub[col] = 0
-                    # 应用方向: ascending=True → 值越小越好, 所以乘以 -1
                     for f, asc in composite_factors:
                         if f in sub.columns and not asc:
                             sub[f] = -sub[f]
                     composite = sub.sum(axis=1, skipna=True)
-                    max_pick = self.n_stocks * 2 if self.price_limit_stocks else self.n_stocks
                     ranked = composite.nsmallest(max_pick)
                     picked = ranked.index[:self.n_stocks].tolist()
             elif ranking_factor in snapshot.columns:
                 valid = snapshot.loc[selected][ranking_factor].dropna()
+                if ascending:
+                    ranked = valid.nsmallest(max_pick)
+                else:
+                    ranked = valid.nlargest(max_pick)
+                picked = ranked.index[:self.n_stocks].tolist()
                 max_pick = self.n_stocks * 2 if self.price_limit_stocks else self.n_stocks
                 if ascending:
                     ranked = valid.nsmallest(max_pick)
