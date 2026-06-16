@@ -62,17 +62,18 @@ jobs:
         run: |
           git fetch origin ${{ github.base_ref }}
           
-          # Attempt automatic merge resolution
-          git merge -X theirs origin/${{ github.base_ref }} || true
+          # Attempt automatic merge resolution using 'ours' strategy to preserve PR branch changes
+          # '-X ours' keeps the PR branch side of each conflict
+          git merge -X ours origin/${{ github.base_ref }} || true
           
-          # Commit the resolution
-          if git diff --quiet --exit-code; then
-            echo "✅ Conflicts resolved automatically"
-          else
+          # Commit the resolution if there are staged/unstaged changes
+          if ! git diff --quiet --exit-code || ! git diff --cached --quiet --exit-code; then
             git add -A
             git commit -m "fix: auto-resolve merge conflicts" || true
             git push origin HEAD:${{ github.head_ref }}
             echo "✅ Conflicts resolved and committed"
+          else
+            echo "✅ No outstanding changes after merge"
           fi
 
   flag-large-conflicts:
@@ -110,7 +111,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_bugs: ${{ steps.review.outputs.has_bugs }}
-      can_auto_fix: ${{ steps.review.outputs.can_auto_fix }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -123,7 +123,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install pylint flake8 bandit
+          pip install pylint==3.2.7 flake8==7.1.1 bandit==1.7.10
 
       - name: Run Static Analysis
         id: review
@@ -154,11 +154,9 @@ jobs:
           
           if [ "$HAS_ISSUES" = true ]; then
             echo "has_bugs=true" >> $GITHUB_OUTPUT
-            echo "can_auto_fix=true" >> $GITHUB_OUTPUT
             echo "⚠️ Code issues detected"
           else
             echo "has_bugs=false" >> $GITHUB_OUTPUT
-            echo "can_auto_fix=false" >> $GITHUB_OUTPUT
             echo "✅ No major code issues detected"
           fi
 
@@ -180,14 +178,15 @@ jobs:
           git fetch origin ${{ github.base_ref }}
           CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
           
-          # Count how many modules/directories are affected
-          MODULES=$(echo "$CHANGED_FILES" | cut -d'/' -f1 | sort -u | wc -l)
+          # Count how many top-level modules/directories are affected
+          # Root-level files are counted as module "." to avoid inflating the count
+          MODULES=$(echo "$CHANGED_FILES" | awk -F'/' '{print ($2 == "" ? "." : $1)}' | sort -u | wc -l)
           CHANGED_COUNT=$(echo "$CHANGED_FILES" | wc -l)
           
           echo "Changed files: $CHANGED_COUNT"
           echo "Affected modules: $MODULES"
           
-          # If more than 3 modules affected or more than 20 files changed, likely violates principles
+          # Thresholds: >3 top-level modules or >20 files suggests non-minimal / multi-module change
           if [ $MODULES -gt 3 ] || [ $CHANGED_COUNT -gt 20 ]; then
             echo "violates_principles=true" >> $GITHUB_OUTPUT
             echo "⚠️ Possible loose coupling violation: affects $MODULES modules, $CHANGED_COUNT files"
