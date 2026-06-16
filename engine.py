@@ -144,17 +144,20 @@ class CrossSectionalEngine:
         stop_loss: Optional[float] = None,
         take_profit_stocks: bool = False,
         take_profit_threshold: float = 0.50,
+        ranking_fn: Optional[Callable[[pd.DataFrame], pd.Series]] = None,
     ) -> BacktestResult:
         """
         执行截面回测
 
         Args:
             universe_filter: (factor_snapshot, all_stocks, rebalance_idx) → List[str] 选股函数
-            ranking_factor: 排名因子列名
+            ranking_factor: 排名因子列名 (当 ranking_fn 为 None 时使用)
             ascending: True=升序(选最小) | False=降序(选最大)
             stop_loss: 组合层面止损 (-0.20 表示跌破初始的 80% 清仓)
             take_profit_stocks: 是否对个股启用止盈
             take_profit_threshold: 个股止盈阈值 (相对于买入价)
+            ranking_fn: 复合排名函数 (factor_snapshot → pd.Series), 返回每只股票的综合评分
+                        如果提供了 ranking_fn, 将忽略 ranking_factor 和 ascending
 
         Returns:
             BacktestResult 对象
@@ -198,7 +201,16 @@ class CrossSectionalEngine:
                 selected = available_stocks
 
             # --- 第 3 步: 排名选股 ---
-            if ranking_factor in snapshot.columns:
+            if ranking_fn is not None:
+                # 复合排名: ranking_fn(snapshot) → pd.Series of scores
+                scores = ranking_fn(snapshot.loc[selected])
+                valid = scores.dropna()
+                if len(valid) > 0:
+                    # 选得分最高的 n_stocks 只 (降序)
+                    picked = valid.nlargest(self.n_stocks).index.tolist()
+                else:
+                    picked = selected[:self.n_stocks]
+            elif ranking_factor in snapshot.columns:
                 valid = snapshot.loc[selected][ranking_factor].dropna()
                 if ascending:
                     picked = valid.nsmallest(self.n_stocks).index.tolist()

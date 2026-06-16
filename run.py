@@ -44,18 +44,20 @@ def run_single_backtest(strategy_def: dict, factor_panel: pd.DataFrame,
         slippage=0.002,
     )
 
+    # 支持复合排名函数 (ranking_fn) 和单因子排名 (ranking_factor)
     result = engine.run(
         universe_filter=strategy_def["universe_filter"],
-        ranking_factor=strategy_def["ranking_factor"],
-        ascending=strategy_def["ascending"],
+        ranking_factor=strategy_def.get("ranking_factor", "mcap"),
+        ascending=strategy_def.get("ascending", True),
         stop_loss=strategy_def.get("stop_loss"),
+        ranking_fn=strategy_def.get("ranking_fn"),
     )
     return result
 
 
 def print_result_table(name: str, result: BacktestResult):
     """格式化输出单个策略的结果"""
-    print(f"  {name:<24} "
+    print(f"  {name:<30} "
           f"年化 {result.annual_return:>7.2f}%  "
           f"夏普 {result.sharpe_ratio:>6.2f}  "
           f"回撤 {result.max_drawdown:>6.2f}%  "
@@ -65,11 +67,11 @@ def print_result_table(name: str, result: BacktestResult):
 
 
 def run_all_backtests(factor_panel: pd.DataFrame, return_panel: pd.DataFrame):
-    """对全部 6 个策略运行回测并输出对比表"""
+    """对全部 11 个策略运行回测并输出对比表"""
     print("\n" + "=" * 95)
-    print("  六大策略回测对比 (基于真实 A 股数据)")
+    print("  十一大策略回测对比 (基于真实 A 股数据)")
     print("=" * 95)
-    print(f"  {'策略':<24} {'年化收益':>8}  {'夏普':>6}  {'回撤':>7}  {'胜率':>6}  {'换手率':>6}  {'终值倍数':>8}")
+    print(f"  {'策略':<30} {'年化收益':>8}  {'夏普':>6}  {'回撤':>7}  {'胜率':>6}  {'换手率':>6}  {'终值倍数':>8}")
     print("  " + "-" * 85)
 
     results = []
