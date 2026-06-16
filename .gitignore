@@ -6,3 +6,4 @@ financials_cache/
 profiles_cache/
 daily_mcap_pb_cache/
 .workbuddy/
+name_lookup.parquet
