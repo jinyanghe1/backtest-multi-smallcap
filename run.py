@@ -48,8 +48,9 @@ def run_single_backtest(strategy_def: dict, factor_panel: pd.DataFrame,
 
     result = engine.run(
         universe_filter=strategy_def["universe_filter"],
-        ranking_factor=strategy_def["ranking_factor"],
-        ascending=strategy_def["ascending"],
+        ranking_factor=strategy_def.get("ranking_factor", "mcap"),
+        ascending=strategy_def.get("ascending", True),
+        composite_factors=strategy_def.get("composite_factors"),
         stop_loss=strategy_def.get("stop_loss"),
     )
     return result
@@ -72,7 +73,7 @@ def run_all_backtests(factor_panel: pd.DataFrame, return_panel: pd.DataFrame,
     if strategies is None:
         strategies = ALL_STRATEGIES
 
-    label = "9 大策略" if len(strategies) > 6 else "六大策略"
+    label = f"{len(strategies)} 大策略"
     print("\n" + "=" * 95)
     print(f"  {label}回测对比 (基于真实 A 股数据)")
     print("=" * 95)

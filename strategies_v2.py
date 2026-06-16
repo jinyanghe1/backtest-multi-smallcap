@@ -205,6 +205,42 @@ strategy_contrarian = {
     "stop_loss": None,
 }
 
+# ──────────────────────────────────────────────────────────────────────────────
+# 策略 D: 5因子复合 (Multi-Factor Z-Score) — 学术级截面选股
+# ──────────────────────────────────────────────────────────────────────────────
+# 文献基础: Fama-French 5-factor + Liu-Stambaugh-Yuan (2019) + 8大alpha综述
+# 逻辑: z-score 等权复合 5 个因子, 因子方向从文献/实证确定
+#       小市值(asc) + 低PB(asc) + 低波动(asc) + 低MAX(asc) + 正动量(desc)
+#       = 选出"小而稳、不赌博、有动力的"微盘股
+# 预期: 夏普 > 0.8, 回撤 < 40%
+
+def five_factor_filter(snapshot, dates, step):
+    """微盘 + 非ST + PB>0 + 有流动性"""
+    stocks = filter_micro_cap(snapshot, dates, step, max_mcap=30)
+    stocks = list(set(stocks) & set(filter_no_st(snapshot, dates, step)))
+    if len(stocks) == 0:
+        return []
+    sub = snapshot.loc[stocks]
+    if 'pb' in sub.columns:
+        sub = sub[sub['pb'] > 0]
+    if 'turnover' in sub.columns:
+        sub = sub[sub['turnover'] > 0.3]
+    return list(sub.index)
+
+strategy_five_factor = {
+    "name": "策略D: 5因子复合(Multi-Factor)",
+    "universe_filter": five_factor_filter,
+    "n_stocks": 30,
+    "stop_loss": None,
+    "composite_factors": [
+        ("mcap", True),     # 小市值溢价 (size)
+        ("pb", True),       # 低估值安全边际 (value)
+        ("vol20d", True),   # 低波动异象 (low vol)
+        ("max_ret", True),  # 避开彩票型股票 (MAX avoidance)
+        ("mom60d", False),  # 正动量趋势 (momentum)
+    ],
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PART III: 汇总
 # ══════════════════════════════════════════════════════════════════════════════
@@ -213,6 +249,7 @@ NEW_STRATEGIES = [
     strategy_reversal_lowvol,
     strategy_size_lowvol_mom,
     strategy_contrarian,
+    strategy_five_factor,
 ]
 
 ALL_STRATEGIES_EXTENDED = None  # 将在 run_all 中动态拼接

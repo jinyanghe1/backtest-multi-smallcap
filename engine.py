@@ -141,6 +141,7 @@ class CrossSectionalEngine:
         universe_filter: Callable[[pd.DataFrame, pd.DatetimeIndex, int], List[str]] = None,
         ranking_factor: str = "mcap",
         ascending: bool = True,
+        composite_factors: Optional[List[tuple]] = None,
         stop_loss: Optional[float] = None,
         take_profit_stocks: bool = False,
         take_profit_threshold: float = 0.50,
@@ -150,8 +151,11 @@ class CrossSectionalEngine:
 
         Args:
             universe_filter: (factor_snapshot, all_stocks, rebalance_idx) → List[str] 选股函数
-            ranking_factor: 排名因子列名
+            ranking_factor: 排名因子列名 (单因子模式)
             ascending: True=升序(选最小) | False=降序(选最大)
+            composite_factors: [(factor_name, ascending), ...] 多因子z-score复合排名,
+                              例如 [('mcap', True), ('pb', True), ('max_ret', False)]
+                              提供此参数时 ranking_factor/ascending 被忽略
             stop_loss: 组合层面止损 (-0.20 表示跌破初始的 80% 清仓)
             take_profit_stocks: 是否对个股启用止盈
             take_profit_threshold: 个股止盈阈值 (相对于买入价)
@@ -203,10 +207,32 @@ class CrossSectionalEngine:
                 if limit_up_stocks:
                     selected = [s for s in selected if s not in limit_up_stocks]
 
-            # --- 第 3 步: 排名选股 ---
-            if ranking_factor in snapshot.columns:
+            # --- 第 3 步: 排名选股 (单因子 or 多因子复合) ---
+            if composite_factors is not None:
+                # 多因子 z-score 复合排名
+                factor_names = [f for f, _ in composite_factors]
+                available = [f for f in factor_names if f in snapshot.columns]
+                if len(available) == 0:
+                    picked = selected[:self.n_stocks]
+                else:
+                    sub = snapshot.loc[selected][available].copy()
+                    for col in available:
+                        mean_val = sub[col].mean()
+                        std_val = sub[col].std()
+                        if std_val and std_val > 0:
+                            sub[col] = (sub[col] - mean_val) / std_val
+                        else:
+                            sub[col] = 0
+                    # 应用方向: ascending=True → 值越小越好, 所以乘以 -1
+                    for f, asc in composite_factors:
+                        if f in sub.columns and not asc:
+                            sub[f] = -sub[f]
+                    composite = sub.sum(axis=1, skipna=True)
+                    max_pick = self.n_stocks * 2 if self.price_limit_stocks else self.n_stocks
+                    ranked = composite.nsmallest(max_pick)
+                    picked = ranked.index[:self.n_stocks].tolist()
+            elif ranking_factor in snapshot.columns:
                 valid = snapshot.loc[selected][ranking_factor].dropna()
-                # 涨跌停下递补: 跳过涨停股, 最多递补 n_stocks 只
                 max_pick = self.n_stocks * 2 if self.price_limit_stocks else self.n_stocks
                 if ascending:
                     ranked = valid.nsmallest(max_pick)

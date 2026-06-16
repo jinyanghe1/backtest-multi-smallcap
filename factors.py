@@ -2,13 +2,15 @@
 因子计算模块
 =============
 根据日线 OHLCV 数据计算截面因子:
-  name     - 股票名称 (用于 ST 检测)
   mcap     - 总市值 (亿元), 来源于逐日 daily_mcap_pb_cache
   pb       - 市净率, 来源于逐日 daily_mcap_pb_cache (公告日对齐, 防前视偏差)
-  mom20d   - 近 20 日收益率
+  pe       - 市盈率, 来源于逐日 daily_mcap_pb_cache
+  mom20d   - 近 20 日收益率 (短期反转因子)
   mom60d   - 近 60 日收益率
-  turnover - 相对量比 (volume / avg_vol_20d, 1.0=均值, 不是换手率%)
-  vol20d   - 近 20 日波动率 (年化)
+  turnover - 相对量比 (volume / avg_vol_20d, 1.0=均值)
+  vol20d   - 近 20 日波动率 (年化, 低波动异象)
+  ivol     - 特质波动率 (market residual std, Ang 2006 异象)
+  max_ret  - 近20日最大日收益 (MAX/彩票型折价, Bali 2011)
   is_limit_up/down - 涨跌停标记
 
 输入: Parquet 文件目录, 每只股票一个文件 (date, open, high, low, close, volume, mcap, pb, turnover)
@@ -193,6 +195,25 @@ def compute_factors(price_data: pd.DataFrame,
     data['vol20d'] = grouped['daily_return'].transform(
         lambda x: x.rolling(20).std() * np.sqrt(252))
 
+    # ── 新因子: 特质波动率 (Idiosyncratic Volatility, IVOL) ──
+    # 文献: Ang et al. (2006/09); Su (2025) NYU Shanghai
+    # 方法: 等权市场收益作为 benchmark, ivol = std(residual) * √252
+    # 假设 β≈1 (微盘等权 universe 中 β 均值天然趋近 1)
+    market_return = data.groupby('date')['daily_return'].mean().reset_index()
+    market_return.columns = ['date', 'market_return']
+    data = data.merge(market_return, on='date', how='left')
+    data['residual'] = data['daily_return'] - data['market_return']
+    # 重新 groupby (因为 merge 改变了 index 顺序)
+    grouped2 = data.groupby('symbol')
+    data['ivol'] = grouped2['residual'].transform(
+        lambda x: x.rolling(20).std() * np.sqrt(252))
+
+    # ── 新因子: MAX (彩票型折价, 近20日最大日收益) ──
+    # 文献: Bali-Cakici-Whitelaw (2011); 中科院 (2022)
+    # 高 MAX → 彩票型股票 → 未来收益低 (散户追涨后回归)
+    data['max_ret'] = grouped2['daily_return'].transform(
+        lambda x: x.rolling(20).max())
+
     # 换手率做百分比 (输入已经是百分比则保留)
     if 'turnover' in data.columns:
         if data['turnover'].median() > 50:
@@ -211,7 +232,7 @@ def compute_factors(price_data: pd.DataFrame,
 
     # --- 构建因子面板 (MultiIndex) ---
     factor_cols = ['name', 'mcap', 'pb', 'pe', 'mom20d', 'mom60d', 'turnover', 'vol20d',
-                   'is_limit_up', 'is_limit_down']
+                   'ivol', 'max_ret', 'is_limit_up', 'is_limit_down']
     available_cols = [c for c in factor_cols if c in data.columns]
 
     factor_panel = data.set_index(['date', 'symbol'])[available_cols]
