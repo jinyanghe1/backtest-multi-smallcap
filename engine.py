@@ -245,17 +245,29 @@ class CrossSectionalEngine:
                     period_returns.loc[date] = 0
                     continue
 
-                # 手续费 (调仓第一天)
+                # 交易成本 (仅在调仓第一天, 按换手率扣除)
                 if j == 0:
-                    equity *= (1 - self.commission)
+                    # 计算本期换手率 (需要替换的持仓比例)
+                    if i > 0:
+                        prev_key = pd.Timestamp(self.rebalance_dates[i-1])
+                        if prev_key in positions_log:
+                            prev_picked = set(positions_log[prev_key].keys())
+                            new_picked = set(picked)
+                            trade_ratio = len(new_picked - prev_picked) / max(len(picked), 1)
+                        else:
+                            trade_ratio = 1.0  # 首次建仓
+                    else:
+                        trade_ratio = 1.0  # 首次建仓
+
+                    # 成本 = 双向佣金 × 交易比例 + 滑点 × 交易比例
+                    # 佣金: 买入+卖出各扣一次 = 2 × 单边费率 × 交易比例
+                    # 滑点: 仅买入端 × 交易比例
+                    cost_rate = (2 * self.commission + self.slippage) * trade_ratio
+                    equity *= (1 - cost_rate)
 
                 # 计算组合当天收益
                 portfolio_return = (r.fillna(0) * weight).sum()
                 period_returns.loc[date] = r.fillna(0).values
-
-                # 滑点
-                portfolio_return -= self.slippage * len(picked) / (
-                    len(picked) * 252 / len(self.rebalance_dates))
 
                 # 更新权益
                 equity *= (1 + portfolio_return)
@@ -283,8 +295,7 @@ class CrossSectionalEngine:
                 # 清仓, 等权现金
                 break
 
-        # --- 收尾 ---
-        equity *= (1 - self.commission)
+        # --- 收尾 (不再重复扣佣金, 已在每次调仓时扣过) ---
 
         # --- 构建权益曲线 (用 equity_dates 对 equity_curve) ---
         curve_data = list(zip(equity_dates, equity_curve[1:]))

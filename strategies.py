@@ -335,26 +335,30 @@ def profitability_low_vol_rank(snapshot: pd.DataFrame) -> pd.Series:
     """
     盈利能力×低波动复合排名
 
-    逻辑: 高 GP/A (高盈利) + 低 vol20d (低波动)
+    逻辑: 高盈利能力 + 低 vol20d (低波动)
 
-    近似 GP/A: 当 pe > 0 且 pb > 0 时, ROE ≈ 1/(pe/pb) = pb/pe
-              → 用 1/PE × PB 近似盈利能力 (越大越好)
-    实际用 1/vol20d 作为低波动得分
+    盈利能力度量:
+      - 有 PE 时: 用 -|PE| (PE越小=盈利越好, 负PE亏损 → 排最后)
+      - 无 PE 时: 用 -vol20d (低波动 = 稳定, 近似盈利稳定性)
+        不再用 PB 代替 GP/A! 高 PB 在微盘股 = 投机, 不是盈利
     """
     scores = pd.Series(0.0, index=snapshot.index)
 
-    # 盈利能力: 用 PB/PE 近似 GP/A (当 PE > 0 时)
-    if 'pb' in snapshot.columns and 'pe' in snapshot.columns:
-        # 1/PE × PB = 盈利能力代理
-        gp_proxy = (snapshot['pb'] / snapshot['pe'].clip(lower=0.1)).clip(lower=0, upper=100)
-        scores += rank_normalize(gp_proxy)
-    elif 'pb' in snapshot.columns:
-        # 无 PE 时用 PB 近似 (高 PB 可能是高 ROE)
-        scores += rank_normalize(snapshot['pb'].clip(lower=0.01))
+    # 盈利能力:
+    if 'pe' in snapshot.columns:
+        # PE 越小越好 (盈利强), 负PE=亏损 (排最后)
+        # 用 -|PE| 的排名: PE=5 得分高, PE=200 得分低, PE=-50 得分最低
+        pe_score = -snapshot['pe'].abs()
+        # 但正PE的得分应该比负PE高: 加一个 bonus
+        pe_positive_bonus = (snapshot['pe'] > 0).astype(float) * 100
+        scores += rank_normalize(pe_score + pe_positive_bonus)
+    elif 'vol20d' in snapshot.columns:
+        # 无 PE 时: 低波动近似盈利稳定性 (不是 PB!)
+        scores += rank_normalize(-snapshot['vol20d'])
+    # else: 无盈利因子, 只用低波动
 
     # 低波动: 波动率越低越好
     if 'vol20d' in snapshot.columns:
-        # 1/vol20d 作为低波动得分
         low_vol_score = 1.0 / snapshot['vol20d'].clip(lower=0.01)
         scores += rank_normalize(low_vol_score)
 
@@ -467,7 +471,11 @@ def triple_factor_rank(snapshot: pd.DataFrame) -> pd.Series:
     """
     三因子复合排名: 极小市值 + 盈利能力 + 条件反转
 
-    得分 = rank(-mcap) + rank(GP/A_proxy) + rank(Drift × (-mom20d))
+    得分 = rank(-mcap) + rank(盈利能力) + rank(Drift × (-mom20d))
+
+    盈利能力:
+      - 有 PE: -|PE| + 正PE bonus (与S8一致)
+      - 无 PE: -vol20d (不用PB!)
     """
     scores = pd.Series(0.0, index=snapshot.index)
 
@@ -475,12 +483,13 @@ def triple_factor_rank(snapshot: pd.DataFrame) -> pd.Series:
     if 'mcap' in snapshot.columns:
         scores += rank_normalize(-snapshot['mcap'])
 
-    # 因子2: 盈利能力 (PB/PE 近似 GP/A)
-    if 'pb' in snapshot.columns and 'pe' in snapshot.columns:
-        gp_proxy = (snapshot['pb'] / snapshot['pe'].clip(lower=0.1)).clip(lower=0, upper=100)
-        scores += rank_normalize(gp_proxy)
-    elif 'pb' in snapshot.columns:
-        scores += rank_normalize(snapshot['pb'].clip(lower=0.01))
+    # 因子2: 盈利能力
+    if 'pe' in snapshot.columns:
+        pe_score = -snapshot['pe'].abs()
+        pe_positive_bonus = (snapshot['pe'] > 0).astype(float) * 100
+        scores += rank_normalize(pe_score + pe_positive_bonus)
+    elif 'vol20d' in snapshot.columns:
+        scores += rank_normalize(-snapshot['vol20d'])
 
     # 因子3: 条件反转 (漂移状态下做反转)
     if 'mom20d' in snapshot.columns and 'mom60d' in snapshot.columns:

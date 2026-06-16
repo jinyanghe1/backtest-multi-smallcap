@@ -132,6 +132,8 @@ def compute_factors(price_data: pd.DataFrame,
 
     data['mcap'] = data['mcap'].clip(lower=0.05, upper=50000)
     data['pb'] = data['pb'].clip(lower=0.01, upper=1000)
+    if 'pe' in data.columns:
+        data['pe'] = data['pe'].clip(lower=-5000, upper=5000)  # 防止极端PE主导排名
 
     # 计算日收益率
     data['daily_return'] = data.groupby('symbol')['close'].pct_change()
@@ -176,6 +178,9 @@ def compute_factors(price_data: pd.DataFrame,
 
     # --- 构建因子面板 (MultiIndex) ---
     factor_cols = ['mcap', 'pb', 'mom20d', 'mom60d', 'turnover', 'vol20d']
+    # 加入 PE 列 (如果存在)
+    if 'pe' in data.columns:
+        factor_cols.append('pe')
     available_cols = [c for c in factor_cols if c in data.columns]
 
     factor_panel = data.set_index(['date', 'symbol'])[available_cols]
