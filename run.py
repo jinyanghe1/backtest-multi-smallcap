@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from tools.backtest_mvp.engine import CrossSectionalEngine, BacktestResult
 from tools.backtest_mvp.factors import load_price_data, compute_factors, load_daily_mcap_pb
 from tools.backtest_mvp.strategies import ALL_STRATEGIES
+from tools.backtest_mvp.strategies_v2 import NEW_STRATEGIES, LITERATURE_REVIEW
 from tools.backtest_mvp.data import DATA_DIR, download_microcap_universe, get_data_summary
 
 
@@ -65,22 +66,27 @@ def print_result_table(name: str, result: BacktestResult):
           f"终值 {result.terminal_value:>6.2f}x")
 
 
-def run_all_backtests(factor_panel: pd.DataFrame, return_panel: pd.DataFrame):
-    """对全部 6 个策略运行回测并输出对比表"""
+def run_all_backtests(factor_panel: pd.DataFrame, return_panel: pd.DataFrame,
+                      strategies: list = None):
+    """运行回测并输出对比表"""
+    if strategies is None:
+        strategies = ALL_STRATEGIES
+
+    label = "9 大策略" if len(strategies) > 6 else "六大策略"
     print("\n" + "=" * 95)
-    print("  六大策略回测对比 (基于真实 A 股数据)")
+    print(f"  {label}回测对比 (基于真实 A 股数据)")
     print("=" * 95)
-    print(f"  {'策略':<24} {'年化收益':>8}  {'夏普':>6}  {'回撤':>7}  {'胜率':>6}  {'换手率':>6}  {'终值倍数':>8}")
+    print(f"  {'策略':<28} {'年化收益':>8}  {'夏普':>6}  {'回撤':>7}  {'胜率':>6}  {'换手率':>6}  {'终值倍数':>8}")
     print("  " + "-" * 85)
 
     results = []
-    for i, s in enumerate(ALL_STRATEGIES):
+    for i, s in enumerate(strategies):
         try:
             result = run_single_backtest(s, factor_panel, return_panel)
             results.append(result)
             print_result_table(s["name"], result)
         except Exception as e:
-            print(f"  {s['name']:<24} 错误: {str(e)[:50]}")
+            print(f"  {s['name']:<28} 错误: {str(e)[:50]}")
 
     if len(results) == 0:
         print("  ⚠️ 没有策略成功运行 (数据可能不足)")
@@ -123,16 +129,19 @@ def cmd_backtest(args: list):
     # 运行
     if "--strategy" in args:
         idx = int(args[args.index("--strategy") + 1]) - 1
-        if 0 <= idx < len(ALL_STRATEGIES):
-            s = ALL_STRATEGIES[idx]
+        all_strats = ALL_STRATEGIES + NEW_STRATEGIES
+        if 0 <= idx < len(all_strats):
+            s = all_strats[idx]
             result = run_single_backtest(s, factor_panel, return_panel)
             print(f"\n{s['name']}:")
             print(f"  年化: {result.annual_return}% | 夏普: {result.sharpe_ratio} | "
                   f"回撤: {result.max_drawdown}% | 终值: {result.terminal_value}x")
         else:
-            print(f"策略编号 1-{len(ALL_STRATEGIES)}")
+            print(f"策略编号 1-{len(all_strats)}")
     else:
         run_all_backtests(factor_panel, return_panel)
+        print()
+        run_all_backtests(factor_panel, return_panel, strategies=NEW_STRATEGIES)
 
 
 def cmd_download(args: list):
@@ -174,6 +183,15 @@ def main():
         cmd_status()
     elif cmd == "backtest":
         cmd_backtest(args)
+    elif cmd == "v2":
+        cmd_backtest(args)
+        print("\n" + "=" * 95)
+        print("  文献综述 (PART I — 见 strategies_v2.py 文档)")
+        print("=" * 95)
+        print(LITERATURE_REVIEW[:1500])
+        print("\n  ... (完整综述见 tools/backtest_mvp/strategies_v2.py)")
+    elif cmd == "review":
+        print(LITERATURE_REVIEW)
     else:
         print(f"未知命令: {cmd}")
 
