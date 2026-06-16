@@ -1,0 +1,302 @@
+name: PR Auto Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check-conflicts:
+    name: Check Merge Conflicts
+    runs-on: ubuntu-latest
+    outputs:
+      has_conflicts: ${{ steps.detect.outputs.has_conflicts }}
+      conflict_severity: ${{ steps.detect.outputs.severity }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Merge Conflicts
+        id: detect
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          
+          # Try to merge and detect conflicts
+          if git merge --no-commit --no-ff origin/${{ github.base_ref }} 2>&1 | grep -q "CONFLICT"; then
+            echo "has_conflicts=true" >> $GITHUB_OUTPUT
+            
+            # Count conflict markers to determine severity
+            CONFLICT_COUNT=$(git diff --name-only --diff-filter=U | wc -l)
+            
+            if [ $CONFLICT_COUNT -le 2 ]; then
+              echo "severity=small" >> $GITHUB_OUTPUT
+              echo "✅ Small conflict detected ($CONFLICT_COUNT files)"
+            else
+              echo "severity=large" >> $GITHUB_OUTPUT
+              echo "⚠️ Large conflict detected ($CONFLICT_COUNT files)"
+            fi
+          else
+            echo "has_conflicts=false" >> $GITHUB_OUTPUT
+            echo "✅ No conflicts detected"
+          fi
+          
+          git merge --abort || true
+
+  resolve-small-conflicts:
+    name: Auto-Resolve Small Conflicts
+    needs: check-conflicts
+    if: needs.check-conflicts.outputs.has_conflicts == 'true' && needs.check-conflicts.outputs.conflict_severity == 'small'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Auto-Resolve Conflicts
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          
+          # Attempt automatic merge resolution using 'ours' strategy to preserve PR branch changes
+          # '-X ours' keeps the PR branch side of each conflict
+          git merge -X ours origin/${{ github.base_ref }} || true
+          
+          # Commit the resolution if there are staged/unstaged changes
+          if ! git diff --quiet --exit-code || ! git diff --cached --quiet --exit-code; then
+            git add -A
+            git commit -m "fix: auto-resolve merge conflicts" || true
+            git push origin HEAD:${{ github.head_ref }}
+            echo "✅ Conflicts resolved and committed"
+          else
+            echo "✅ No outstanding changes after merge"
+          fi
+
+  flag-large-conflicts:
+    name: Flag Large Conflicts for Review
+    needs: check-conflicts
+    if: needs.check-conflicts.outputs.has_conflicts == 'true' && needs.check-conflicts.outputs.conflict_severity == 'large'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `⚠️ **Large Merge Conflicts Detected**\n\nThis PR has significant merge conflicts that require manual review and resolution. Please resolve them before merging.\n\n**Action Required:** Manual conflict resolution needed.`
+            })
+
+      - name: Add Label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.addLabels({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: ['conflict-review-needed']
+            })
+
+  code-review:
+    name: Automated Code Review (Bug Detection)
+    runs-on: ubuntu-latest
+    outputs:
+      has_bugs: ${{ steps.review.outputs.has_bugs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install pylint==3.2.7 flake8==7.1.1 bandit==1.7.10
+
+      - name: Run Static Analysis
+        id: review
+        continue-on-error: true
+        run: |
+          echo "Running static code analysis..."
+          
+          # Get changed files
+          git fetch origin ${{ github.base_ref }}
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '\.py$' || true)
+          
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "has_bugs=false" >> $GITHUB_OUTPUT
+            echo "can_auto_fix=false" >> $GITHUB_OUTPUT
+            echo "✅ No Python files changed"
+            exit 0
+          fi
+          
+          # Run analysis
+          HAS_ISSUES=false
+          
+          for file in $CHANGED_FILES; do
+            if [ -f "$file" ]; then
+              flake8 "$file" --count --statistics || HAS_ISSUES=true
+              pylint "$file" --fail-under=7.0 --max-line-length=120 || HAS_ISSUES=true
+            fi
+          done
+          
+          if [ "$HAS_ISSUES" = true ]; then
+            echo "has_bugs=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Code issues detected"
+          else
+            echo "has_bugs=false" >> $GITHUB_OUTPUT
+            echo "✅ No major code issues detected"
+          fi
+
+  architecture-review:
+    name: Architecture Review (Coupling & Modularity)
+    runs-on: ubuntu-latest
+    outputs:
+      violates_principles: ${{ steps.check.outputs.violates_principles }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check Coupling Principles
+        id: check
+        run: |
+          echo "Checking for loose coupling violations..."
+          
+          git fetch origin ${{ github.base_ref }}
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          
+          # Count how many top-level modules/directories are affected
+          # Root-level files are counted as module "." to avoid inflating the count
+          MODULES=$(echo "$CHANGED_FILES" | awk -F'/' '{print ($2 == "" ? "." : $1)}' | sort -u | wc -l)
+          CHANGED_COUNT=$(echo "$CHANGED_FILES" | wc -l)
+          
+          echo "Changed files: $CHANGED_COUNT"
+          echo "Affected modules: $MODULES"
+          
+          # Thresholds: >3 top-level modules or >20 files suggests non-minimal / multi-module change
+          if [ $MODULES -gt 3 ] || [ $CHANGED_COUNT -gt 20 ]; then
+            echo "violates_principles=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Possible loose coupling violation: affects $MODULES modules, $CHANGED_COUNT files"
+          else
+            echo "violates_principles=false" >> $GITHUB_OUTPUT
+            echo "✅ Adheres to loose coupling principles"
+          fi
+
+  request-manual-review:
+    name: Request Manual Reviews
+    needs: [code-review, architecture-review]
+    if: needs.code-review.outputs.has_bugs == 'true' || needs.architecture-review.outputs.violates_principles == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comment with Review Request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let reviewComments = [];
+            
+            if ('${{ needs.code-review.outputs.has_bugs }}' === 'true') {
+              reviewComments.push('🐛 **Code Issues Detected:** Static analysis found potential bugs or code quality issues.');
+            }
+            
+            if ('${{ needs.architecture-review.outputs.violates_principles }}' === 'true') {
+              reviewComments.push('🏗️ **Architecture Review:** This PR affects multiple modules/files. Please verify it follows the loose coupling principle (minimal changes, single module focus).');
+            }
+            
+            const comment = '⚠️ **Automated Review Required**\n\n' + reviewComments.join('\n\n') + '\n\n**Next Steps:** Please address the issues above before merging.';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            })
+
+      - name: Add Review-Needed Labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = [];
+            
+            if ('${{ needs.code-review.outputs.has_bugs }}' === 'true') {
+              labels.push('bug-review-needed');
+            }
+            
+            if ('${{ needs.architecture-review.outputs.violates_principles }}' === 'true') {
+              labels.push('architecture-review-needed');
+            }
+            
+            if (labels.length > 0) {
+              github.rest.issues.addLabels({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: labels
+              })
+            }
+
+  merge-check:
+    name: Final Merge Check
+    needs: [check-conflicts, code-review, architecture-review]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine Merge Status
+        run: |
+          echo "=== PR Review Summary ==="
+          echo "Conflicts: ${{ needs.check-conflicts.outputs.has_conflicts }}"
+          echo "Code Issues: ${{ needs.code-review.outputs.has_bugs }}"
+          echo "Architecture Issues: ${{ needs.architecture-review.outputs.violates_principles }}"
+          
+          # Check if all reviews passed
+          if [ "${{ needs.check-conflicts.outputs.has_conflicts }}" = "true" ] && [ "${{ needs.check-conflicts.outputs.conflict_severity }}" = "large" ]; then
+            echo "❌ Large conflicts require manual resolution"
+            exit 1
+          fi
+          
+          if [ "${{ needs.code-review.outputs.has_bugs }}" = "true" ]; then
+            echo "❌ Code issues detected - manual review required"
+            exit 1
+          fi
+          
+          if [ "${{ needs.architecture-review.outputs.violates_principles }}" = "true" ]; then
+            echo "❌ Architecture principles violated - manual review required"
+            exit 1
+          fi
+          
+          echo "✅ All automated reviews passed!"
+
+      - name: Update PR Status
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            const allPassed = 
+              '${{ needs.check-conflicts.outputs.has_conflicts }}' !== 'true' &&
+              '${{ needs.code-review.outputs.has_bugs }}' !== 'true' &&
+              '${{ needs.architecture-review.outputs.violates_principles }}' !== 'true';
+            
+            if (allPassed) {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: '✅ **All automated reviews passed!** This PR is ready for manual review or merge.'
+              })
+            }
