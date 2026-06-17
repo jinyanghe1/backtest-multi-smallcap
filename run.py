@@ -30,6 +30,12 @@ from tools.backtest_mvp.factors import load_price_data, compute_factors, load_da
 from tools.backtest_mvp.strategies import ALL_STRATEGIES
 from tools.backtest_mvp.strategies_v2 import NEW_STRATEGIES, LITERATURE_REVIEW
 from tools.backtest_mvp.data import DATA_DIR, download_microcap_universe, get_data_summary
+from tools.backtest_mvp.benchmark import (
+    load_benchmarks,
+    compute_benchmark_stats,
+    compute_excess_return,
+    get_primary_benchmark,
+)
 
 
 def run_single_backtest(strategy_def: dict, factor_panel: pd.DataFrame,
@@ -76,19 +82,33 @@ def run_all_backtests(factor_panel: pd.DataFrame, return_panel: pd.DataFrame,
     if strategies is None:
         strategies = ALL_STRATEGIES
 
+    # 加载基准
+    bms = load_benchmarks()
+    bm_stats = compute_benchmark_stats(bms)
+    primary_bm = get_primary_benchmark(bm_stats)
+    bm_row = bm_stats[bm_stats["benchmark"] == primary_bm]
+    bm_ann = bm_row["annual_return"].iloc[0] if len(bm_row) > 0 else None
+
     label = f"{len(strategies)} 大策略"
-    print("\n" + "=" * 95)
-    print(f"  {label}回测对比 (基于真实 A 股数据)")
-    print("=" * 95)
-    print(f"  {'策略':<28} {'年化收益':>8}  {'夏普':>6}  {'回撤':>7}  {'胜率':>6}  {'换手率':>6}  {'终值倍数':>8}")
-    print("  " + "-" * 85)
+    print("\n" + "=" * 105)
+    print(f"  {label}回测对比 (基准: {primary_bm})")
+    print("=" * 105)
+    header = f"  {'策略':<28} {'年化':>7}  {'夏普':>6}  {'回撤':>7}  {'胜率':>6}  {'终值':>7}  {'超额(α)':>8}"
+    print(header)
+    print("  " + "-" * 95)
 
     results = []
     for i, s in enumerate(strategies):
         try:
             result = run_single_backtest(s, factor_panel, return_panel)
             results.append(result)
-            print_result_table(s["name"], result)
+            alpha_str = ""
+            if bm_ann is not None:
+                alpha = compute_excess_return(result.annual_return, bm_ann)
+                alpha_str = f"{alpha:>+7.1f}pp"
+            print(f"  {s['name']:<28} {result.annual_return:>5.1f}%  "
+                  f"{result.sharpe_ratio:>5.2f}  {result.max_drawdown:>5.1f}%  "
+                  f"{result.win_rate:>4.1f}%  {result.terminal_value:>5.2f}x  {alpha_str}")
         except Exception as e:
             print(f"  {s['name']:<28} 错误: {str(e)[:50]}")
 
@@ -98,10 +118,18 @@ def run_all_backtests(factor_panel: pd.DataFrame, return_panel: pd.DataFrame,
 
     # 汇总
     print("\n  " + "=" * 85)
-    best = max(results, key=lambda r: r.sharpe_ratio)
-    print(f"  最高夏普:  {best.annual_return}% | 推荐作为组合核心")
-    best_ret = max(results, key=lambda r: r.annual_return)
-    print(f"  最高收益:  {best_ret.annual_return}% | 可作卫星策略")
+    # 找到最高夏普和最高收益
+    best_idx = max(range(len(results)), key=lambda i: results[i].sharpe_ratio)
+    best_sharpe = results[best_idx]
+    best_ret_idx = max(range(len(results)), key=lambda i: results[i].annual_return)
+    best_ret = results[best_ret_idx]
+    best_s_name = strategies[best_idx]["name"] if best_idx < len(strategies) else "?"
+    best_r_name = strategies[best_ret_idx]["name"] if best_ret_idx < len(strategies) else "?"
+    print(f"  最高夏普:  {best_s_name} ({best_sharpe.sharpe_ratio:.2f})")
+    print(f"  最高收益:  {best_r_name} ({best_ret.annual_return:.1f}%)")
+    if bm_ann is not None:
+        print(f"  基准 ({primary_bm}): {bm_ann:+.1f}%")
+        print(f"  最大超额:  {best_ret.annual_return - bm_ann:+.1f} pp")
     print(f"  数据窗口:  {factor_panel.index.get_level_values(0).min().strftime('%Y-%m-%d')} ~ "
           f"{factor_panel.index.get_level_values(0).max().strftime('%Y-%m-%d')}")
     print(f"  覆盖股票:  {factor_panel.index.get_level_values(1).nunique()} 只")
