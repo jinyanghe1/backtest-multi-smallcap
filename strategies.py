@@ -558,7 +558,10 @@ def factor_momentum_rank(snapshot: pd.DataFrame) -> pd.Series:
         if 'mom20d' in snapshot.columns and col != 'mom20d':
             valid = snapshot[[col, 'mom20d']].dropna()
             if len(valid) > 10:
-                ic = valid[col].corr(valid['mom20d'], method='spearman')
+                # Rank correlation (pearson on ranks = spearman, avoids scipy binary issue)
+                r1 = valid[col].rank()
+                r2 = valid['mom20d'].rank()
+                ic = r1.corr(r2, method='pearson')
                 if col not in _ic_history:
                     _ic_history[col] = []
                 _ic_history[col].append(ic)
