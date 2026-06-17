@@ -86,6 +86,7 @@ def run_all_backtests(factor_panel: pd.DataFrame, return_panel: pd.DataFrame,
     results = []
     for i, s in enumerate(strategies):
         try:
+            result = run_single_backtest(s, factor_panel, return_panel)
             results.append(result)
             print_result_table(s["name"], result)
         except Exception as e:

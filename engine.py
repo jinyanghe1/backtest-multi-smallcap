@@ -251,12 +251,6 @@ class CrossSectionalEngine:
                 else:
                     ranked = valid.nlargest(max_pick)
                 picked = ranked.index[:self.n_stocks].tolist()
-                max_pick = self.n_stocks * 2 if self.price_limit_stocks else self.n_stocks
-                if ascending:
-                    ranked = valid.nsmallest(max_pick)
-                else:
-                    ranked = valid.nlargest(max_pick)
-                picked = ranked.index[:self.n_stocks].tolist()
             else:
                 picked = selected[:self.n_stocks]
 
