@@ -60,6 +60,7 @@ def run_single_backtest(strategy_def: dict, factor_panel: pd.DataFrame,
         composite_factors=strategy_def.get("composite_factors"),
         stop_loss=strategy_def.get("stop_loss"),
         ranking_fn=strategy_def.get("ranking_fn"),
+        factor_weights=strategy_def.get("factor_weights"),
     )
     return result
 

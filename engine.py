@@ -146,17 +146,14 @@ class CrossSectionalEngine:
         take_profit_stocks: bool = False,
         take_profit_threshold: float = 0.50,
         ranking_fn: Optional[Callable[[pd.DataFrame], pd.Series]] = None,
+        factor_weights: Optional[Dict[str, float]] = None,
     ) -> BacktestResult:
         """
         执行截面回测
 
         Args:
             universe_filter: (factor_snapshot, all_stocks, rebalance_idx) → List[str] 选股函数
-
-            ranking_factor: 排名因子列名 (单因子模式, 当 ranking_fn 和 composite_factors 都未提供时使用)
-
-            ranking_factor: 排名因子列名 (当 ranking_fn 为 None 时使用)
-
+            ranking_factor: 排名因子列名 (单因子模式, 当 ranking_fn/composite_factors 都未提供时使用)
             ascending: True=升序(选最小) | False=降序(选最大)
             composite_factors: [(factor_name, ascending), ...] 多因子z-score复合排名,
                               例如 [('mcap', True), ('pb', True), ('max_ret', False)]
@@ -164,6 +161,10 @@ class CrossSectionalEngine:
             stop_loss: 组合层面止损 (-0.20 表示跌破初始的 80% 清仓)
             take_profit_stocks: 是否对个股启用止盈
             take_profit_threshold: 个股止盈阈值 (相对于买入价)
+            ranking_fn: 复合排名函数 (factor_snapshot → pd.Series), 返回每只股票的综合评分
+                        如果提供了 ranking_fn, 将忽略 composite_factors 和 ranking_factor
+            factor_weights: {因子名: 权重} — 仅当 composite_factors 启用时生效
+                            默认 None = 等权; 提供时用加权和替代等权和
             ranking_fn: 复合排名函数 (factor_snapshot → pd.Series), 返回每只股票的综合评分
                         如果提供了 ranking_fn, 将忽略 ranking_factor 和 ascending
 
@@ -241,7 +242,21 @@ class CrossSectionalEngine:
                     for f, asc in composite_factors:
                         if f in sub.columns and not asc:
                             sub[f] = -sub[f]
-                    composite = sub.sum(axis=1, skipna=True)
+                    # 复合: 等权 sum 或 加权 sum
+                    if factor_weights:
+                        w_sum = pd.Series(0.0, index=sub.index)
+                        total_w = 0.0
+                        for f, asc in composite_factors:
+                            if f in sub.columns:
+                                w = factor_weights.get(f, 1.0 / len(composite_factors))
+                                w_sum += sub[f] * w
+                                total_w += w
+                        if total_w > 0:
+                            composite = w_sum / total_w  # normalize
+                        else:
+                            composite = sub.sum(axis=1, skipna=True)
+                    else:
+                        composite = sub.sum(axis=1, skipna=True)
                     ranked = composite.nsmallest(max_pick)
                     picked = ranked.index[:self.n_stocks].tolist()
             elif ranking_factor in snapshot.columns:

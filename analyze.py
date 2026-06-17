@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import datetime
+from typing import Optional, List, Dict
 
 PROJECT = Path(__file__).resolve().parent
 BENCH_DIR = PROJECT / "benchmarks"
@@ -266,6 +267,98 @@ if len(ic_df) > 0:
 
 else:
     print("  IC 计算失败 (数据不足)")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# IC 加权导出函数
+# ══════════════════════════════════════════════════════════════════════════════
+
+def compute_ic_weights(
+    factor_panel: pd.DataFrame,
+    return_panel: pd.DataFrame,
+    lookback: int = 24,
+    factor_list: Optional[List[str]] = None,
+) -> Dict[str, float]:
+    """
+    基于历史 rank IC 计算因子权重
+
+    Args:
+        factor_panel: MultiIndex (date, symbol) 因子面板
+        return_panel: MultiIndex (date, symbol) 收益率面板
+        lookback: 回看月数
+        factor_list: 因子列表, None=用所有可用因子
+
+    Returns:
+        {因子名: 归一化权重} — 权重总和=1.0, IC为负取绝对值
+    """
+    dates = sorted(set(factor_panel.index.get_level_values(0)))
+    if factor_list is None:
+        factor_list = [c for c in factor_panel.columns
+                       if c not in ('name', 'is_limit_up', 'is_limit_down')]
+
+    # 逐月计算 IC
+    month_groups = pd.DatetimeIndex(dates).to_period('M')
+    ic_records = []
+    dates_arr = np.array(dates)
+
+    for month in sorted(set(month_groups)):
+        mask = month_groups == month
+        m_dates = dates_arr[mask]
+        if len(m_dates) < 15:
+            continue
+        factor_date = m_dates[-1]
+        next_month = month + 1
+        next_mask = month_groups == next_month
+        next_dates = dates_arr[next_mask]
+        if len(next_dates) < 10:
+            continue
+
+        try:
+            f_snap = factor_panel.xs(factor_date, level=0, drop_level=True)
+        except (KeyError, AttributeError):
+            continue
+        try:
+            r = return_panel.xs(next_dates[-1], level=0, drop_level=True)
+        except (KeyError, AttributeError):
+            continue
+        fwd_return = r['daily_return']
+
+        for fac in factor_list:
+            if fac not in f_snap.columns:
+                continue
+            f_vals = f_snap[fac].dropna()
+            common = f_vals.index.intersection(fwd_return.index)
+            if len(common) < 30:
+                continue
+            r1 = f_vals.loc[common].rank()
+            r2 = fwd_return.loc[common].rank()
+            ic = r1.corr(r2, method='pearson')
+            ic_records.append({'month': str(month), 'factor': fac, 'IC': ic})
+
+    if not ic_records:
+        return {}
+
+    ic_df = pd.DataFrame(ic_records)
+    # 只取最近 lookback 个月
+    all_months = sorted(set(ic_df['month']))
+    recent = all_months[-lookback:] if len(all_months) >= lookback else all_months
+    ic_df = ic_df[ic_df['month'].isin(recent)]
+
+    # 每个因子的平均 |IC|
+    weights = {}
+    for fac in factor_list:
+        sub = ic_df[ic_df['factor'] == fac]
+        if len(sub) < 5:
+            continue
+        abs_ic = sub['IC'].abs().mean()
+        weights[fac] = abs_ic
+
+    if not weights:
+        return {}
+
+    # 归一化
+    total = sum(weights.values())
+    return {k: v / total for k, v in weights.items()}
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 总结
