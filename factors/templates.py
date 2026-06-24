@@ -116,6 +116,27 @@ def template_value_momentum(
     return template_multi_factor_blend(signals, weights=weights, group=group)
 
 
+def template_mean_reversion(
+    factor_panel: pd.DataFrame,
+    price_field: str = "close",
+    short_window: int = 5,
+    long_window: int = 20,
+    decay_window: int = 5,
+    group_col: str = "sw_industry_1",
+) -> pd.Series:
+    """Short-term mean reversion: sell recent winners, buy recent losers.
+
+    Signal = -ts_rank(delta(price, 1), short_window) smoothed by decay_linear.
+    Reversion is stronger after sharp moves, so we use short windows.
+    """
+    _require_columns(factor_panel, [price_field])
+    raw = ts_rank(delta(factor_panel[price_field], 1), short_window)
+    signal = decay_linear(-raw, decay_window)
+    if group_col in factor_panel.columns:
+        return group_rank(signal, factor_panel[group_col])
+    return rank(signal)
+
+
 def add_template_signals(
     factor_panel: pd.DataFrame,
     template_names: Sequence[str],
@@ -132,6 +153,8 @@ def add_template_signals(
             result[name] = golden_combo(result, **kwargs.get(name, {}))
         elif name == "value_momentum":
             result[name] = template_value_momentum(result, **kwargs.get(name, {}))
+        elif name == "mean_reversion":
+            result[name] = template_mean_reversion(result, **kwargs.get(name, {}))
         else:
             raise KeyError(f"unknown template: {name}")
     return result

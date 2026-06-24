@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import pandas as pd
 
-from tools.backtest_mvp.factors.templates import add_template_signals, golden_combo, template_fundamental_value, template_value_momentum
+from tools.backtest_mvp.factors.templates import add_template_signals, golden_combo, template_fundamental_value, template_mean_reversion, template_value_momentum
 
 
 def _panel():
@@ -58,4 +58,22 @@ def test_value_momentum_template():
         value_momentum={"fundamental_window": 2, "momentum_window": 2, "decay_window": 2},
     )
     assert "value_momentum" in enriched.columns
+
+
+def test_mean_reversion_template():
+    panel = _panel()
+    signal = template_mean_reversion(
+        panel,
+        short_window=2,
+        long_window=3,
+        decay_window=2,
+    )
+    assert signal.index.equals(panel.index)
+    assert signal.notna().sum() > 0
+
+    enriched = add_template_signals(
+        panel, ["mean_reversion"],
+        mean_reversion={"short_window": 2, "decay_window": 2},
+    )
+    assert "mean_reversion" in enriched.columns
 
