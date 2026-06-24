@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import pandas as pd
 
-from tools.backtest_mvp.factors.templates import add_template_signals, golden_combo, template_fundamental_value
+from tools.backtest_mvp.factors.templates import add_template_signals, golden_combo, template_fundamental_value, template_value_momentum
 
 
 def _panel():
@@ -39,4 +39,23 @@ def test_golden_combo_and_add_template_signals():
     enriched = add_template_signals(panel, ["golden_combo"], golden_combo={"window": 2})
     assert "golden_combo" in enriched.columns
     assert enriched.index.equals(panel.index)
+
+
+def test_value_momentum_template():
+    panel = _panel()
+    signal = template_value_momentum(
+        panel,
+        fundamental_field="roe_ttm",
+        fundamental_window=2,
+        momentum_window=2,
+        decay_window=2,
+    )
+    assert signal.index.equals(panel.index)
+    assert signal.notna().sum() > 0
+
+    enriched = add_template_signals(
+        panel, ["value_momentum"],
+        value_momentum={"fundamental_window": 2, "momentum_window": 2, "decay_window": 2},
+    )
+    assert "value_momentum" in enriched.columns
 

@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 import pandas as pd
 
-from .operators import decay_linear, delta, group_rank, rank, ts_rank
+from .operators import decay_linear, delta, group_rank, rank, ts_decay_exp, ts_rank, winsorize
 
 
 def _require_columns(frame: pd.DataFrame, columns: Sequence[str]) -> None:
@@ -89,6 +89,33 @@ def golden_combo(factor_panel: pd.DataFrame, window: int = 20, group_col: str = 
     return template_multi_factor_blend(signals, group=group)
 
 
+def template_value_momentum(
+    factor_panel: pd.DataFrame,
+    fundamental_field: str = "roe_ttm",
+    price_field: str = "close",
+    fundamental_window: int = 126,
+    momentum_window: int = 20,
+    decay_window: int = 10,
+    fundamental_weight: float = 0.6,
+    group_col: str = "sw_industry_2",
+) -> pd.Series:
+    """Blend fundamental value with short-term momentum.
+
+    60% fundamental (ts_rank of ROE) + 40% momentum (decay_linear of ts_rank of delta).
+    Higher fundamental_weight => more stable, lower turnover.
+    """
+    _require_columns(factor_panel, [fundamental_field, price_field])
+    value_signal = ts_rank(factor_panel[fundamental_field], fundamental_window)
+    mom_signal = decay_linear(
+        ts_rank(delta(factor_panel[price_field], 1), momentum_window),
+        decay_window,
+    )
+    signals = [value_signal, mom_signal]
+    weights = [fundamental_weight, 1.0 - fundamental_weight]
+    group = factor_panel[group_col] if group_col in factor_panel.columns else None
+    return template_multi_factor_blend(signals, weights=weights, group=group)
+
+
 def add_template_signals(
     factor_panel: pd.DataFrame,
     template_names: Sequence[str],
@@ -103,6 +130,8 @@ def add_template_signals(
             result[name] = template_technical_momentum(result, **kwargs.get(name, {}))
         elif name == "golden_combo":
             result[name] = golden_combo(result, **kwargs.get(name, {}))
+        elif name == "value_momentum":
+            result[name] = template_value_momentum(result, **kwargs.get(name, {}))
         else:
             raise KeyError(f"unknown template: {name}")
     return result
