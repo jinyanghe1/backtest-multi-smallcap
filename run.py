@@ -226,6 +226,24 @@ def cmd_backtest(args: list):
             ascending=False,
             template_kwargs=template_kwargs,
         )
+
+        # Coverage warning
+        if template_name in factor_panel.columns:
+            col = factor_panel[template_name]
+        else:
+            # The template was just computed; re-derive to check coverage
+            from tools.backtest_mvp.factors.templates import add_template_signals
+            enriched = add_template_signals(
+                factor_panel, [template_name],
+                **{template_name: template_kwargs},
+            )
+            col = enriched[template_name] if template_name in enriched.columns else pd.Series(dtype=float)
+        if len(col) > 0:
+            cov = col.notna().mean()
+            if cov < 0.3:
+                print(f"  ⚠️ WARNING: signal '{template_name}' coverage is only {cov:.1%} "
+                      f"(< 30%). Results may be unreliable.")
+
         print(f"\n模板信号 {template_name}:")
         print(f"  年化: {result.annual_return}% | 夏普: {result.sharpe_ratio} | "
               f"回撤: {result.max_drawdown}% | 终值: {result.terminal_value}x")
