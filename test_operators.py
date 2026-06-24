@@ -17,6 +17,7 @@ from tools.backtest_mvp.factors.operators import (
     ts_argmax,
     ts_argmin,
     ts_rank,
+    winsorize,
 )
 
 
@@ -62,4 +63,28 @@ def test_other_operators():
     assert ts_argmax(pd.Series([1.0, 3.0, 2.0]), 3).iloc[-1] == 1
     assert ts_argmin(pd.Series([1.0, 3.0, 2.0]), 3).iloc[-1] == 0
     assert signed_power(pd.Series([-2.0, 3.0]), 2).tolist() == [-4.0, 9.0]
+
+
+def test_winsorize_clips_outliers():
+    # Use a flat series (no MultiIndex) so winsorize operates on all values
+    s = pd.Series([1.0, 2.0, 3.0, 4.0, 1000.0])
+    result = winsorize(s, std=1.0, level=None)
+    # The outlier (1000) should be clipped — mean+1*std will be < 1000
+    assert result.iloc[-1] < 1000.0
+    # Non-outlier values should be unchanged
+    assert result.iloc[0] == 1.0
+    assert result.iloc[1] == 2.0
+    # The clipped value should equal mean + 1*std
+    mu = s.mean()
+    sigma = s.std()
+    expected_clip = mu + 1.0 * sigma
+    assert abs(result.iloc[-1] - expected_clip) < 0.01
+
+
+def test_winsorize_no_clip_without_outliers():
+    s = _panel_series()
+    result = winsorize(s, std=4.0)
+    # With no outliers, values should be unchanged
+    assert result.iloc[0] == 1.0
+    assert result.iloc[1] == 4.0
 

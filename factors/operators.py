@@ -163,3 +163,23 @@ def signed_power(series: pd.Series, alpha: float) -> pd.Series:
     """Raise abs(x) to alpha while preserving sign."""
     return np.sign(series) * (series.abs() ** alpha)
 
+
+def winsorize(series: pd.Series, std: float = 4.0, level: str | int | None = "date") -> pd.Series:
+    """Cap values beyond ±std standard deviations from the cross-sectional mean.
+
+    Operates per-date for panel data (MultiIndex with a date level).
+    Values outside [mean - std*sigma, mean + std*sigma] are clipped to the bounds.
+    """
+    def _winsor(s: pd.Series) -> pd.Series:
+        mu = s.mean()
+        sigma = s.std()
+        if sigma == 0 or pd.isna(sigma):
+            return s
+        lo = mu - std * sigma
+        hi = mu + std * sigma
+        return s.clip(lower=lo, upper=hi)
+
+    if level is not None and _has_level(series.index, level):
+        return series.groupby(level=level, group_keys=False).apply(_winsor)
+    return _winsor(series)
+
