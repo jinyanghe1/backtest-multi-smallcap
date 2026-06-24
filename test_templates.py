@@ -5,7 +5,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import pandas as pd
 
-from tools.backtest_mvp.factors.templates import add_template_signals, golden_combo, template_fundamental_value, template_mean_reversion, template_value_momentum
+from tools.backtest_mvp.factors.templates import (
+    add_template_signals,
+    golden_combo,
+    template_fundamental_quality,
+    template_fundamental_value,
+    template_mean_reversion,
+    template_value_momentum,
+)
 
 
 def _panel():
@@ -60,20 +67,35 @@ def test_value_momentum_template():
     assert "value_momentum" in enriched.columns
 
 
-def test_mean_reversion_template():
-    panel = _panel()
-    signal = template_mean_reversion(
-        panel,
-        short_window=2,
-        long_window=3,
-        decay_window=2,
-    )
+def _fundamental_panel():
+    dates = pd.date_range("2024-01-01", periods=10)
+    symbols = ["a", "b"]
+    idx = pd.MultiIndex.from_product([dates, symbols], names=["date", "symbol"])
+    return pd.DataFrame({
+        "roe_ttm": [0.1, 0.2] * 10,
+        "gross_margin": [0.3, 0.4] * 10,
+        "revenue_growth_ttm": [0.05, 0.15] * 10,
+        "sw_industry_2": ["g", "g"] * 10,
+    }, index=idx)
+
+
+def test_fundamental_quality_template():
+    panel = _fundamental_panel()
+    signal = template_fundamental_quality(panel, window=3)
     assert signal.index.equals(panel.index)
     assert signal.notna().sum() > 0
 
     enriched = add_template_signals(
-        panel, ["mean_reversion"],
-        mean_reversion={"short_window": 2, "decay_window": 2},
+        panel, ["fundamental_quality"],
+        fundamental_quality={"window": 3},
     )
-    assert "mean_reversion" in enriched.columns
+    assert "fundamental_quality" in enriched.columns
+
+
+def test_fundamental_quality_partial_fields():
+    """Should work even if only some of the 3 fields are present."""
+    panel = _fundamental_panel().drop(columns=["revenue_growth_ttm"])
+    signal = template_fundamental_quality(panel, window=3)
+    assert signal.index.equals(panel.index)
+    assert signal.notna().sum() > 0
 

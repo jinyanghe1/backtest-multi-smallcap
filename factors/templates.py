@@ -137,6 +137,25 @@ def template_mean_reversion(
     return rank(signal)
 
 
+def template_fundamental_quality(
+    factor_panel: pd.DataFrame,
+    window: int = 126,
+    group_col: str = "sw_industry_2",
+) -> pd.Series:
+    """Composite quality signal: ROE + gross_margin + revenue_growth.
+
+    Equal-weight blend of three fundamental ts_rank signals, group-neutralized.
+    Requires roe_ttm, gross_margin, revenue_growth_ttm columns.
+    """
+    available = [f for f in ["roe_ttm", "gross_margin", "revenue_growth_ttm"]
+                 if f in factor_panel.columns]
+    if not available:
+        raise KeyError("factor_panel has none of: roe_ttm, gross_margin, revenue_growth_ttm")
+    signals = [ts_rank(factor_panel[f], window) for f in available]
+    group = factor_panel[group_col] if group_col in factor_panel.columns else None
+    return template_multi_factor_blend(signals, group=group)
+
+
 def add_template_signals(
     factor_panel: pd.DataFrame,
     template_names: Sequence[str],
@@ -155,6 +174,8 @@ def add_template_signals(
             result[name] = template_value_momentum(result, **kwargs.get(name, {}))
         elif name == "mean_reversion":
             result[name] = template_mean_reversion(result, **kwargs.get(name, {}))
+        elif name == "fundamental_quality":
+            result[name] = template_fundamental_quality(result, **kwargs.get(name, {}))
         else:
             raise KeyError(f"unknown template: {name}")
     return result
