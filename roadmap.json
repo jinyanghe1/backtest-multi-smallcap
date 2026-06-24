@@ -1,0 +1,208 @@
+{
+  "version": "2026-06-24-v1",
+  "generated_at": "2026-06-24T23:38:00+08:00",
+  "based_on": {
+    "papers_searched": 20,
+    "search_sources": ["arxiv", "springer", "mdpi", "github CTA-Quant-Papers", "tsinghua PBCSF"],
+    "date_range": "2024-2026"
+  },
+  "literature_summary": {
+    "key_papers": [
+      {
+        "title": "AlphaAgent: LLM-Driven Alpha Mining with Regularized Decay-Resistant Factors",
+        "source": "arxiv 2502.16789",
+        "year": 2025,
+        "insight": "AST-based originality regularization + hypothesis-factor alignment to fight alpha decay"
+      },
+      {
+        "title": "Machine Learning Enhanced Multi-Factor Quantitative Trading: A Cross-Sectional Approach",
+        "source": "arxiv 2507.07107",
+        "year": 2025,
+        "insight": "Multi-factor alpha discovery with bias correction, PyTorch-accelerated factor computation"
+      },
+      {
+        "title": "Dynamic Factor Allocation Leveraging Regime-Switching Signals",
+        "source": "arxiv 2410.14841",
+        "year": 2024,
+        "insight": "Sparse jump model (SJM) to identify bull/bear regimes for individual factors"
+      },
+      {
+        "title": "Cross-sectional anomalies and conditional asset pricing (China A-share)",
+        "source": "springer 40854-025-00774",
+        "year": 2025,
+        "insight": "30 cross-sectional anomalies in A-share; investor sentiment as conditioning variable"
+      },
+      {
+        "title": "Spatiotemporal Return Decomposition and Multi-Strategy",
+        "source": "mdpi 2227-7072-14-6-145",
+        "year": 2026,
+        "insight": "Long Overnight + Daytime Reversal hybrid strategy dominates cross-asset"
+      },
+      {
+        "title": "Market volatility, momentum, and reversal: a switching strategy",
+        "source": "springer 41260-024-00372",
+        "year": 2024,
+        "insight": "Volatility-regime-based switching between momentum and reversal strategies"
+      },
+      {
+        "title": "RegimeFolio: A Regime Aware ML System for Sectoral Portfolio Optimization",
+        "source": "arxiv 2510.14986",
+        "year": 2025,
+        "insight": "Cumulative return 137%, Sharpe 1.17, 12% lower max drawdown via regime awareness"
+      },
+      {
+        "title": "Adaptive and Regime-Aware RL for Portfolio Optimization",
+        "source": "arxiv 2509.14385",
+        "year": 2025,
+        "insight": "Long-horizon portfolio optimization in regime-shifting markets via adaptive RL"
+      },
+      {
+        "title": "A Deep RL Framework for Dynamic Portfolio Optimization (China A-share)",
+        "source": "arxiv 2412.18563",
+        "year": 2024,
+        "insight": "DRL for dynamic portfolio rebalancing with evidence from China stock market"
+      },
+      {
+        "title": "Finding Anomalies in China (Tsinghua PBCSF)",
+        "source": "tsinghua PBCSF wp6",
+        "year": 2025,
+        "insight": "Retail investor turnover has positive significant effect on anomaly returns in A-share"
+      },
+      {
+        "title": "Risk-Adjusted Deep Reinforcement Learning for Portfolio Optimization",
+        "source": "springer 44196-025-00875",
+        "year": 2025,
+        "insight": "DRL algorithms with risk-adjusted objectives for dynamic asset allocation"
+      },
+      {
+        "title": "A forest of opinions: A multi-model ensemble-HMM voting framework",
+        "source": "aimspress DSFE-05-04-019",
+        "year": 2025,
+        "insight": "Combining classical statistical + ML for market regime shift detection"
+      },
+      {
+        "title": "Reinforcement learning for deep portfolio optimization (DPO)",
+        "source": "aimspress ERA-32-09-239",
+        "year": 2024,
+        "insight": "DPO framework combining deep learning + RL + modern portfolio theory"
+      },
+      {
+        "title": "Multi-Factor Bond/WTI Term Structure (function-on-function regression)",
+        "source": "arxiv 2412.04463",
+        "year": 2024,
+        "insight": "Function-on-function regression for term structure factor analysis"
+      },
+      {
+        "title": "Analysis of stock selection strategy of multi-factorial model (industry rotation + sentiment)",
+        "source": "shs-conf ICDEBA2023_02025",
+        "year": 2024,
+        "insight": "Industry rotation effect combined with investor sentiment for A-share stock selection"
+      },
+      {
+        "title": "Regime Switching Models integrating ML feature importance",
+        "source": "ijfmr 41894",
+        "year": 2025,
+        "insight": "Leveraging ensemble ML feature importance for regime-switching factor timing"
+      },
+      {
+        "title": "Robust portfolio optimization with DL factor extraction + regime switching",
+        "source": "ijcbs article 30",
+        "year": 2025,
+        "insight": "Deep Learning for non-linear factor extraction + regime-switching logic"
+      },
+      {
+        "title": "Automate Strategy Finding with LLM in Quant investment",
+        "source": "researchgate 383917934",
+        "year": 2024,
+        "insight": "LLM agents mine alpha factors from multimodal financial data"
+      },
+      {
+        "title": "factors.directory: Professional Trading Factor Knowledge Base",
+        "source": "factors.directory",
+        "year": 2025,
+        "insight": "Academic + practitioner validated factors across timeframes and markets"
+      },
+      {
+        "title": "CTA-Quant-Papers collection",
+        "source": "github jackywong1228/CTA-Quant-Papers",
+        "year": 2026,
+        "insight": "32+ multi-factor / term-structure / CTA papers aggregated with code links"
+      }
+    ]
+  },
+  "incremental_strategies": [
+    {
+      "id": "S_REGIME_MOMENTUM",
+      "name": "Regime-Switching Momentum",
+      "source_paper": "arxiv 2410.14841 + springer 41260-024-00372",
+      "logic": "Use sparse jump model or volatility regime to switch between momentum and mean-reversion signals",
+      "implementation": "template_regime_momentum(factor_panel, vol_window=20, mom_window=10, rev_window=5)",
+      "status": "planned",
+      "priority": "high"
+    },
+    {
+      "id": "S_OVERNIGHT_DAYTIME",
+      "name": "Overnight-Long + Daytime-Reversal Hybrid",
+      "source_paper": "mdpi 2227-7072-14-6-145",
+      "logic": "Decompose returns into overnight + daytime; long strong overnight, reverse daytime",
+      "implementation": "template_overnight_reversal(factor_panel, open_field='open', close_field='close')",
+      "status": "planned",
+      "priority": "medium",
+      "note": "Requires intraday decomposition; approximable with open/close delta"
+    },
+    {
+      "id": "S_LOW_VOL_REGIME",
+      "name": "Low-Volatility with Regime Filter",
+      "source_paper": "springer 41260-024-00372",
+      "logic": "Apply low-vol signal only in low-vol regimes; switch to momentum in high-vol",
+      "implementation": "template_low_volatility + regime filter wrapper",
+      "status": "planned",
+      "priority": "high"
+    },
+    {
+      "id": "S_SENTIMENT_CONDITIONAL",
+      "name": "Sentiment-Conditional Multi-Factor",
+      "source_paper": "springer 40854-025-00774",
+      "logic": "30 cross-sectional anomalies conditioned on investor sentiment (A-share validated)",
+      "implementation": "template_sentiment_conditional(factor_panel, sentiment_proxy='turnover_rate')",
+      "status": "planned",
+      "priority": "medium"
+    },
+    {
+      "id": "S_ENSEMBLE_FEATURE_IMPORTANCE",
+      "name": "Ensemble Feature-Importance Weighted Blend",
+      "source_paper": "ijfmr 41894",
+      "logic": "Use ML ensemble feature importance to dynamically weight factor blend",
+      "implementation": "template_ensemble_weighted(factor_panel, factor_list, window=252)",
+      "status": "planned",
+      "priority": "low",
+      "note": "Requires sklearn dependency; keep optional"
+    }
+  ],
+  "incremental_metrics": [
+    {"id": "M_IC_MEAN", "name": "Information Coefficient (mean)", "formula": "spearman_corr(signal, forward_return).mean()", "source": "standard", "status": "todo", "priority": "high"},
+    {"id": "M_IC_IR", "name": "IC Information Ratio", "formula": "ic_mean / ic_std", "source": "standard", "status": "todo", "priority": "high"},
+    {"id": "M_IC_DECAY", "name": "IC Decay Curve", "formula": "ic at lag 1,5,10,20 days", "source": "alphalens standard", "status": "todo", "priority": "medium"},
+    {"id": "M_RANK_IC", "name": "Rank IC (Spearman)", "formula": "spearman rank correlation per rebalance", "source": "standard", "status": "todo", "priority": "high"},
+    {"id": "M_QUANTILE_SPREAD", "name": "Quantile Portfolio Spread", "formula": "Q5_return - Q1_return", "source": "alphalens", "status": "todo", "priority": "medium"},
+    {"id": "M_HIT_RATE", "name": "Hit Rate (directional accuracy)", "formula": "fraction of correct sign predictions", "source": "ML literature", "status": "todo", "priority": "medium"},
+    {"id": "M_SIGNAL_TURNOVER", "name": "Signal Turnover (signal stability)", "formula": "mean(|signal_t - signal_{t-1}|) / 2", "source": "wq-alpha-research", "status": "todo", "priority": "high"},
+    {"id": "M_MAX_DRAWDOWN_RECOVERY", "name": "Max Drawdown Recovery Time", "formula": "days from trough to new high", "source": "risk management", "status": "todo", "priority": "low"},
+    {"id": "M_CALMAR_ENHANCED", "name": "Enhanced Calmar (3y rolling)", "formula": "3y annual_return / 3y max_drawdown", "source": "practitioner", "status": "todo", "priority": "low"},
+    {"id": "M_FACTOR_DECAY_HALFLIFE", "name": "Factor Decay Half-Life", "formula": "lag where IC drops to half of IC_1", "source": "AlphaAgent 2502.16789", "status": "todo", "priority": "medium"}
+  ],
+  "todo_list": [
+    {"id": "T01", "task": "engine.py: add IC (Information Coefficient) calculation to BacktestResult", "status": "pending", "priority": "P0"},
+    {"id": "T02", "task": "factors/templates.py: add template_low_volatility", "status": "pending", "priority": "P0"},
+    {"id": "T03", "task": "data/providers.py: add batch_get method to DataProvider", "status": "pending", "priority": "P0"},
+    {"id": "T04", "task": "research_loop/validators.py: add signal coverage validator", "status": "pending", "priority": "P0"},
+    {"id": "T05", "task": "factors/templates.py: add template_regime_momentum (regime-switching momentum/reversal)", "status": "pending", "priority": "P1"},
+    {"id": "T06", "task": "engine.py: add ic_decay_curve (IC at lag 1/5/10/20)", "status": "pending", "priority": "P1"},
+    {"id": "T07", "task": "research_loop/validators.py: add hit_rate metric", "status": "pending", "priority": "P1"},
+    {"id": "T08", "task": "factors/operators.py: add ts_std_dev (rolling std) operator", "status": "pending", "priority": "P1"},
+    {"id": "T09", "task": "factors/templates.py: add template_overnight_reversal (open/close decomposition)", "status": "pending", "priority": "P1"},
+    {"id": "T10", "task": "research_loop/validators.py: add signal_turnover (signal stability) metric", "status": "pending", "priority": "P1"},
+    {"id": "T11", "task": "factors/operators.py: add ts_quantile (rolling quantile) operator", "status": "pending", "priority": "P2"},
+    {"id": "T12", "task": "engine.py: add quantile_spread (Q5-Q1 return) to BacktestResult", "status": "pending", "priority": "P2"}
+  ]
+}

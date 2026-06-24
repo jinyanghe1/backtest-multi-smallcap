@@ -10,6 +10,7 @@ from tools.backtest_mvp.factors.templates import (
     golden_combo,
     template_fundamental_quality,
     template_fundamental_value,
+    template_low_volatility,
     template_mean_reversion,
     template_value_momentum,
 )
@@ -98,4 +99,17 @@ def test_fundamental_quality_partial_fields():
     signal = template_fundamental_quality(panel, window=3)
     assert signal.index.equals(panel.index)
     assert signal.notna().sum() > 0
+
+
+def test_low_volatility_template():
+    panel = _panel()
+    signal = template_low_volatility(panel, vol_field="vol20d", window=2)
+    assert signal.index.equals(panel.index)
+    assert signal.notna().sum() > 0
+
+    enriched = add_template_signals(
+        panel, ["low_volatility"],
+        low_volatility={"vol_field": "vol20d", "window": 2},
+    )
+    assert "low_volatility" in enriched.columns
 

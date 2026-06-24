@@ -204,3 +204,32 @@ def ts_decay_exp(
 
     return _group_apply(series, group_level, _calc)
 
+
+def ts_std_dev(
+    series: pd.Series,
+    window: int,
+    group_level: str | int = "symbol",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Rolling standard deviation within each group."""
+    min_periods = window if min_periods is None else min_periods
+    return _group_apply(
+        series, group_level,
+        lambda s: s.rolling(window, min_periods=min_periods).std(),
+    )
+
+
+def ts_quantile(
+    series: pd.Series,
+    window: int,
+    quantile: float = 0.5,
+    group_level: str | int = "symbol",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Rolling quantile within each group."""
+    min_periods = window if min_periods is None else min_periods
+    return _group_apply(
+        series, group_level,
+        lambda s: s.rolling(window, min_periods=min_periods).quantile(quantile),
+    )
+

@@ -8,6 +8,7 @@ import pandas as pd
 from tools.backtest_mvp.data.providers import (
     AllProvidersFailedError,
     AkshareClient,
+    BatchFetchError,
     DataProvider,
     FieldNotFoundError,
     NetworkError,
@@ -114,3 +115,37 @@ def test_data_provider_can_fallback_to_default_akshare(monkeypatch):
 
     assert result.source == "akshare"
     assert result.data.iloc[0] == 30.5
+
+
+def test_batch_get_all_succeed():
+    provider = DataProvider(
+        config={"price": {"primary": "good", "fallback": []}},
+        clients={"good": GoodClient()},
+        retry_delays=(0, 0, 0),
+        rate_limit_delay=0,
+    )
+    results = provider.batch_get(["sh600000", "sz000001"], "price", "close")
+    assert set(results.keys()) == {"sh600000", "sz000001"}
+    assert results["sh600000"].data.iloc[-1] == 2.0
+
+
+def test_batch_get_partial_failure_raises_batch_error():
+    class SelectiveClient:
+        def fetch_price(self, symbol, field, **kwargs):
+            if symbol == "bad":
+                raise FieldNotFoundError("no data")
+            return pd.Series([1.0], index=[pd.Timestamp("2024-01-01")], name=field)
+
+    provider = DataProvider(
+        config={"price": {"primary": "sel", "fallback": []}},
+        clients={"sel": SelectiveClient()},
+        retry_delays=(0, 0, 0),
+        rate_limit_delay=0,
+    )
+    try:
+        provider.batch_get(["good", "bad"], "price", "close")
+    except BatchFetchError as exc:
+        assert "bad" in exc.failures
+        assert "good" in exc.partial_results
+    else:
+        raise AssertionError("expected BatchFetchError")

@@ -156,6 +156,58 @@ def template_fundamental_quality(
     return template_multi_factor_blend(signals, group=group)
 
 
+def template_low_volatility(
+    factor_panel: pd.DataFrame,
+    vol_field: str = "vol20d",
+    window: int = 20,
+    group_col: str = "sw_industry_1",
+) -> pd.Series:
+    """Low-volatility signal: prefer stocks with lower recent volatility.
+
+    Signal = -ts_rank(vol_field, window), group-neutralized.
+    Lower volatility → higher signal value.
+    """
+    _require_columns(factor_panel, [vol_field])
+    signal = -ts_rank(factor_panel[vol_field], window)
+    if group_col in factor_panel.columns:
+        return group_rank(signal, factor_panel[group_col])
+    return rank(signal)
+
+
+def template_regime_momentum(
+    factor_panel: pd.DataFrame,
+    price_field: str = "close",
+    vol_window: int = 20,
+    mom_window: int = 10,
+    rev_window: int = 5,
+    vol_threshold: float = 0.03,
+    group_col: str = "sw_industry_1",
+) -> pd.Series:
+    """Regime-switching momentum/reversal.
+
+    In low-volatility regime (rolling vol < vol_threshold): use momentum.
+    In high-volatility regime: use mean reversion.
+
+    Source: arxiv 2410.14841 + springer 41260-024-00372
+    """
+    _require_columns(factor_panel, [price_field])
+    returns = delta(factor_panel[price_field], 1)
+    rolling_vol = returns.groupby(level="symbol", group_keys=False).rolling(vol_window).std()
+    rolling_vol = rolling_vol.reset_index(level=0, drop=True)
+
+    mom_signal = ts_rank(delta(factor_panel[price_field], 1), mom_window)
+    rev_signal = -ts_rank(delta(factor_panel[price_field], 1), rev_window)
+
+    is_low_vol = rolling_vol < vol_threshold
+    signal = pd.Series(np.nan, index=factor_panel.index)
+    signal[is_low_vol] = mom_signal[is_low_vol]
+    signal[~is_low_vol] = rev_signal[~is_low_vol]
+
+    if group_col in factor_panel.columns:
+        return group_rank(signal, factor_panel[group_col])
+    return rank(signal)
+
+
 def add_template_signals(
     factor_panel: pd.DataFrame,
     template_names: Sequence[str],
@@ -176,6 +228,12 @@ def add_template_signals(
             result[name] = template_mean_reversion(result, **kwargs.get(name, {}))
         elif name == "fundamental_quality":
             result[name] = template_fundamental_quality(result, **kwargs.get(name, {}))
+        elif name == "low_volatility":
+            result[name] = template_low_volatility(result, **kwargs.get(name, {}))
+        elif name == "regime_momentum":
+            result[name] = template_regime_momentum(result, **kwargs.get(name, {}))
+        elif name == "overnight_reversal":
+            result[name] = template_overnight_reversal(result, **kwargs.get(name, {}))
         else:
             raise KeyError(f"unknown template: {name}")
     return result

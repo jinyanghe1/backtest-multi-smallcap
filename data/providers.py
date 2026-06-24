@@ -54,6 +54,21 @@ class AllProvidersFailedError(ProviderError):
         super().__init__(f"All providers failed for {category}/{symbol}/{field}: {errors}")
 
 
+class BatchFetchError(ProviderError):
+    """Raised when one or more symbols fail during batch_get.
+
+    Attributes:
+        failures: {symbol: AllProvidersFailedError}
+        partial_results: {symbol: FetchResult} for successful fetches
+    """
+
+    def __init__(self, failures: dict, partial_results: dict | None = None):
+        self.failures = failures
+        self.partial_results = partial_results or {}
+        symbols = list(failures.keys())
+        super().__init__(f"Batch fetch failed for {len(failures)} symbol(s): {symbols}")
+
+
 @dataclass(frozen=True)
 class FetchResult:
     data: pd.Series | pd.DataFrame
@@ -270,6 +285,30 @@ class DataProvider:
         if result.data.shape[1] == 1:
             return result.data.iloc[:, 0]
         raise DataValidationError("get_series received multi-column DataFrame")
+
+    def batch_get(
+        self,
+        symbols: list[str],
+        category: str,
+        field: str,
+        **kwargs,
+    ) -> dict[str, "FetchResult"]:
+        """Fetch data for multiple symbols.
+
+        Returns a dict mapping symbol -> FetchResult for successful fetches.
+        Symbols that fail on ALL providers raise AllProvidersFailedError,
+        which is collected and re-raised as a BatchError containing all failures.
+        """
+        results: dict[str, FetchResult] = {}
+        failures: dict[str, AllProvidersFailedError] = {}
+        for symbol in symbols:
+            try:
+                results[symbol] = self.get(category, symbol, field, **kwargs)
+            except AllProvidersFailedError as exc:
+                failures[symbol] = exc
+        if failures:
+            raise BatchFetchError(failures, partial_results=results)
+        return results
 
     def _fetch(self, client, category: str, symbol: str, field: str, **kwargs) -> pd.Series | pd.DataFrame:
         method = getattr(client, f"fetch_{category}", None)

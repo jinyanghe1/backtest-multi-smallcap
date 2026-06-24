@@ -35,6 +35,10 @@ class BacktestResult:
     terminal_value: float            # 期末权益 (初始=1)
     positions_log: pd.DataFrame      # 逐月持仓明细 (date × stock → weight)
     monthly_turnover_log: List[float] # 逐月换手率
+    ic_mean: float = 0.0             # 平均信息系数 (Spearman rank IC)
+    ic_ir: float = 0.0               # IC 信息比率 = ic_mean / ic_std
+    ic_series: pd.Series = None      # 逐调仓日 IC 序列
+    quantile_spread: float = 0.0     # Q5-Q1 return spread (top-bottom quantile)
 
 
 class CrossSectionalEngine:
@@ -390,6 +394,24 @@ class CrossSectionalEngine:
         win_rate = (monthly_ret > 0).sum() / n_months if n_months > 0 else 0
         avg_turnover = np.mean(turnover_log) if turnover_log else 0
 
+        # --- IC (Information Coefficient) calculation ---
+        # For each rebalance date, compute Spearman rank correlation
+        # between the ranking factor and the forward period return.
+        ic_series = self._compute_ic_series(
+            ranking_factor, ranking_fn, composite_factors, factor_weights
+        )
+        if len(ic_series) > 0 and ic_series.notna().sum() > 0:
+            valid_ic = ic_series.dropna()
+            ic_mean = float(valid_ic.mean()) if len(valid_ic) > 0 else 0.0
+            ic_std = float(valid_ic.std()) if len(valid_ic) > 1 else 0.0
+            ic_ir = float(ic_mean / ic_std) if ic_std > 0 else 0.0
+        else:
+            ic_mean = 0.0
+            ic_ir = 0.0
+
+        # --- Quantile spread (Q5 - Q1) ---
+        q_spread = self._compute_quantile_spread(ranking_factor, ranking_fn, composite_factors, factor_weights)
+
         result = BacktestResult(
             equity_curve=equity_series,
             monthly_returns=monthly_ret,
@@ -403,5 +425,215 @@ class CrossSectionalEngine:
             terminal_value=round(equity, 4),
             positions_log=pd.DataFrame(positions_log).fillna(0),
             monthly_turnover_log=turnover_log,
+            ic_mean=round(ic_mean, 4),
+            ic_ir=round(ic_ir, 4),
+            ic_series=ic_series,
+            quantile_spread=round(q_spread, 6),
         )
         return result
+
+    def _compute_ic_series(
+        self,
+        ranking_factor: str,
+        ranking_fn,
+        composite_factors,
+        factor_weights,
+    ) -> pd.Series:
+        """Compute Spearman rank IC for each rebalance period.
+
+        For each rebalance date i, correlate the signal at date i with
+        the realized return over [date_i, date_{i+1}).
+        Returns a Series indexed by rebalance date.
+        """
+        # IC uses pandas rank correlation, no scipy needed
+        ic_values = []
+        ic_dates = []
+        for i, rebal_date in enumerate(self.rebalance_dates):
+            if i >= len(self.rebalance_dates) - 1:
+                break
+            next_date = self.rebalance_dates[i + 1]
+            rebal_ts = pd.Timestamp(rebal_date)
+            next_ts = pd.Timestamp(next_date)
+
+            try:
+                snapshot = self._get_factor_snapshot(rebal_ts)
+            except Exception:
+                continue
+            if len(snapshot) == 0:
+                continue
+
+            # Compute signal scores for all stocks in snapshot
+            if ranking_fn is not None:
+                scores = ranking_fn(snapshot)
+            elif composite_factors is not None:
+                available = [f for f, _ in composite_factors if f in snapshot.columns]
+                if not available:
+                    continue
+                sub = snapshot[available].copy()
+                for col in available:
+                    mu, sigma = sub[col].mean(), sub[col].std()
+                    sub[col] = (sub[col] - mu) / sigma if sigma and sigma > 0 else 0
+                for f, asc in composite_factors:
+                    if f in sub.columns and not asc:
+                        sub[f] = -sub[f]
+                if factor_weights:
+                    w_sum = pd.Series(0.0, index=sub.index)
+                    total_w = 0.0
+                    for f, _ in composite_factors:
+                        if f in sub.columns:
+                            w = factor_weights.get(f, 1.0 / len(composite_factors))
+                            w_sum += sub[f] * w
+                            total_w += w
+                    scores = w_sum / total_w if total_w > 0 else sub.sum(axis=1, skipna=True)
+                else:
+                    scores = sub.sum(axis=1, skipna=True)
+            elif ranking_factor in snapshot.columns:
+                scores = snapshot[ranking_factor]
+            else:
+                continue
+
+            # Get forward returns
+            period_dates = [d for d in self.dates if d > rebal_ts and d <= next_ts]
+            if not period_dates:
+                continue
+            fwd_returns = self._get_period_returns(rebal_ts, next_ts, list(snapshot.index))
+            if fwd_returns.empty:
+                continue
+            period_ret = fwd_returns.sum(axis=0)  # cumulative return over period
+
+            # Align scores and returns
+            common = scores.dropna().index.intersection(period_ret.dropna().index)
+            if len(common) < 5:
+                continue
+            s_scores = scores.loc[common].rank()
+            s_returns = period_ret.loc[common].rank()
+            if s_scores.std() == 0 or s_returns.std() == 0:
+                continue
+            corr = float(s_scores.corr(s_returns))
+            if pd.notna(corr):
+                ic_values.append(corr)
+                ic_dates.append(rebal_ts)
+
+        if ic_dates:
+            return pd.Series(ic_values, index=pd.Index(ic_dates, name="date"))
+        return pd.Series(dtype=float)
+
+    def compute_ic_decay(
+        self,
+        ranking_factor: str = "mcap",
+        lags: tuple = (1, 5, 10, 20),
+    ) -> dict[int, float]:
+        """Compute IC at multiple forward-return lags.
+
+        For each lag L, correlate the signal at rebalance date i with
+        the return over the next L trading days.
+
+        Returns {lag: mean_ic} mapping.
+        """
+        result = {}
+        for lag in lags:
+            ic_values = []
+            for i, rebal_date in enumerate(self.rebalance_dates):
+                rebal_ts = pd.Timestamp(rebal_date)
+                # Get L trading days after rebal_date
+                future_dates = [d for d in self.dates if d > rebal_ts][:lag]
+                if len(future_dates) < lag:
+                    continue
+                try:
+                    snapshot = self._get_factor_snapshot(rebal_ts)
+                except Exception:
+                    continue
+                if len(snapshot) == 0 or ranking_factor not in snapshot.columns:
+                    continue
+                scores = snapshot[ranking_factor].dropna()
+                # Get cumulative return over lag days
+                fwd_returns = self._get_period_returns(
+                    rebal_ts, future_dates[-1], list(scores.index)
+                )
+                if fwd_returns.empty:
+                    continue
+                period_ret = fwd_returns.sum(axis=0)
+                common = scores.index.intersection(period_ret.dropna().index)
+                if len(common) < 5:
+                    continue
+                corr = float(scores.loc[common].rank().corr(period_ret.loc[common].rank()))
+                if pd.notna(corr):
+                    ic_values.append(corr)
+            result[lag] = float(np.mean(ic_values)) if ic_values else 0.0
+        return result
+
+    def _compute_quantile_spread(
+        self,
+        ranking_factor: str,
+        ranking_fn,
+        composite_factors,
+        factor_weights,
+        n_quantiles: int = 5,
+    ) -> float:
+        """Compute average Q5-Q1 return spread across rebalance dates.
+
+        For each rebalance period, sort stocks into N quantiles by signal,
+        compute each quantile's return, and return mean(Q5 - Q1).
+        """
+        spreads = []
+        for i, rebal_date in enumerate(self.rebalance_dates):
+            if i >= len(self.rebalance_dates) - 1:
+                break
+            next_date = self.rebalance_dates[i + 1]
+            rebal_ts = pd.Timestamp(rebal_date)
+            next_ts = pd.Timestamp(next_date)
+
+            try:
+                snapshot = self._get_factor_snapshot(rebal_ts)
+            except Exception:
+                continue
+            if len(snapshot) == 0:
+                continue
+
+            # Compute signal scores
+            if ranking_fn is not None:
+                scores = ranking_fn(snapshot)
+            elif composite_factors is not None:
+                available = [f for f, _ in composite_factors if f in snapshot.columns]
+                if not available:
+                    continue
+                sub = snapshot[available].copy()
+                for col in available:
+                    mu, sigma = sub[col].mean(), sub[col].std()
+                    sub[col] = (sub[col] - mu) / sigma if sigma and sigma > 0 else 0
+                for f, asc in composite_factors:
+                    if f in sub.columns and not asc:
+                        sub[f] = -sub[f]
+                scores = sub.sum(axis=1, skipna=True)
+            elif ranking_factor in snapshot.columns:
+                scores = snapshot[ranking_factor]
+            else:
+                continue
+
+            valid_scores = scores.dropna()
+            if len(valid_scores) < n_quantiles * 2:
+                continue
+
+            # Get forward returns
+            fwd_returns = self._get_period_returns(rebal_ts, next_ts, list(valid_scores.index))
+            if fwd_returns.empty:
+                continue
+            period_ret = fwd_returns.sum(axis=0)
+
+            # Align
+            common = valid_scores.index.intersection(period_ret.dropna().index)
+            if len(common) < n_quantiles * 2:
+                continue
+            s = valid_scores.loc[common]
+            r = period_ret.loc[common]
+
+            # Sort into quantiles
+            try:
+                q_labels = pd.qcut(s, n_quantiles, labels=False, duplicates="drop")
+            except ValueError:
+                continue
+            q_returns = r.groupby(q_labels).mean()
+            if len(q_returns) >= 2:
+                spreads.append(float(q_returns.iloc[-1] - q_returns.iloc[0]))
+
+        return float(np.mean(spreads)) if spreads else 0.0
