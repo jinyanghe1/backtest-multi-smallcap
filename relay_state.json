@@ -1,0 +1,30 @@
+{
+  "completed": [
+    "financial_fields.py: 8 个派生字段 (roe_ttm, roa_ttm, gross_margin, net_margin, asset_turnover, revenue_growth_ttm, profit_growth_ttm + 7 source fields)",
+    "operators.py: 14 个算子 (ts_rank, delay, delta, decay_linear, correlation, rank, group_rank, scale, ts_argmax, ts_argmin, signed_power, winsorize, ts_decay_exp, ts_std_dev, ts_quantile)",
+    "templates.py: 9 个模板 (fundamental_value, technical_momentum, golden_combo, value_momentum, mean_reversion, fundamental_quality, low_volatility, regime_momentum, overnight_reversal)",
+    "engine.py: BacktestResult 含 ic_mean, ic_ir, ic_series, quantile_spread; compute_ic_decay(lags); _compute_quantile_spread(n_quantiles)",
+    "data/providers.py: DataProvider.get/batch_get + BatchFetchError",
+    "research_loop/validators.py: validate_metrics, validate_signal_coverage, compute_hit_rate, compute_signal_turnover",
+    "roadmap.json: 20篇文献, 5策略, 10指标",
+    "测试: 66 passed, 6 warnings"
+  ],
+  "todos": [
+    "T01: engine.py 增加 monthly_ic_heatmap（IC按月热力图数据）",
+    "T02: factors/templates.py 增加 template_sentiment_conditional（turnover_rate 作为 sentiment proxy，高换手用反转，低换手用动量）",
+    "T03: research_loop/validators.py 增加 factor_decay_halflife 指标",
+    "T04: engine.py 增加 max_drawdown_recovery_time",
+    "T05: factors/templates.py 增加 template_ensemble（多因子等权/stacking ensemble）",
+    "T06: factors/templates.py 增加 template_multi_timeframe（多时间框架动量融合）",
+    "T07: engine.py 增加 turnover_attribution（换手率分解为再平衡+价格变动）",
+    "T08: factors/financial_fields.py 增加 operating_cashflow_ttm 和 operating_cashflow_to_revenue",
+    "T09: factors/operators.py 增加 ts_skew + ts_kurt（偏度/峰度算子）",
+    "T10: research_loop/validators.py 增加 walk_forward_validation_split（训练/验证/测试集切分）",
+    "T11: data/providers.py 增加 cache_ttl 和缓存失效机制",
+    "T12: engine.py 增加 rolling_sharpe（滚动夏普比率）"
+  ],
+  "test_count": 66,
+  "last_commit": "acc54b5",
+  "current_todo_index": 0,
+  "version": 1
+}
