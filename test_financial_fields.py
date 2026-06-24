@@ -31,8 +31,29 @@ def test_derive_financial_fields_uses_notice_date_not_report_date():
     assert derived.loc[1, "pb"] == 12.0 / 5.0
 
 
-def test_field_spec_marks_unavailable_fields():
-    assert get_field_spec("gross_margin").status == "unavailable"
+def test_field_spec_gross_margin_now_available():
+    assert get_field_spec("gross_margin").status == "available"
+
+
+def test_gross_margin_derivation_uses_notice_date():
+    """gross_margin = gross_profit / revenue, aligned by notice_date."""
+    financials = pd.DataFrame({
+        "symbol": ["sh600000"] * 2,
+        "report_date": [pd.Timestamp("2023-06-30"), pd.Timestamp("2023-09-30")],
+        "notice_date": [pd.Timestamp("2023-07-28"), pd.Timestamp("2023-10-28")],
+        "revenue": [100.0, 120.0],
+        "gross_profit": [40.0, 50.0],
+    })
+    prices = pd.DataFrame({
+        "symbol": ["sh600000", "sh600000"],
+        "date": [pd.Timestamp("2023-07-01"), pd.Timestamp("2023-08-01")],
+        "close": [10.0, 11.0],
+    })
+    derived = derive_financial_fields(financials, prices, fields=["gross_margin"])
+    # On 2023-07-01: no notice yet, should be NaN
+    assert pd.isna(derived.loc[0, "gross_margin"])
+    # On 2023-08-01: notice 2023-07-28 available, gross_margin = 40/100 = 0.4
+    assert abs(derived.loc[1, "gross_margin"] - 0.4) < 0.01
 
 
 def test_roa_ttm_derivation_uses_notice_date():

@@ -29,12 +29,13 @@ FIELD_SPECS: dict[str, FieldSpec] = {
     "mcap": FieldSpec("总市值", "亿元", ("westock", "eastmoney"), "close * total_shares_yi"),
     "pb": FieldSpec("市净率", "ratio", ("eastmoney", "westock"), "close / bps"),
     "pe": FieldSpec("市盈率", "ratio", ("eastmoney", "westock"), "close / eps"),
+    "gross_profit": FieldSpec("毛利润", "元", ("eastmoney", "ths", "sina")),
     "total_assets": FieldSpec("资产总计", "元", ("eastmoney", "sina", "ths")),
     "roe_ttm": FieldSpec("ROE(TTM)", "ratio", ("derived",), "net_profit_ttm / total_equity", ("net_profit", "total_equity"), True),
     "roa_ttm": FieldSpec("ROA(TTM)", "ratio", ("derived",), "net_profit_ttm / total_assets", ("net_profit", "total_assets"), True),
     "revenue_growth_ttm": FieldSpec("营收TTM增速", "ratio", ("derived",), "(revenue_ttm / revenue_ttm_lag4Q) - 1", ("revenue",), True),
     "profit_growth_ttm": FieldSpec("净利润TTM增速", "ratio", ("derived",), "(net_profit_ttm / net_profit_ttm_lag4Q) - 1", ("net_profit",), True),
-    "gross_margin": FieldSpec("毛利率", "ratio", ("derived",), "gross_profit / revenue", ("gross_profit", "revenue"), True, "unavailable"),
+    "gross_margin": FieldSpec("毛利率", "ratio", ("derived",), "gross_profit / revenue", ("gross_profit", "revenue"), True),
 }
 
 
@@ -67,6 +68,8 @@ def _add_ttm_fields(financials: pd.DataFrame) -> pd.DataFrame:
         df["revenue_growth_ttm"] = df["revenue_ttm"] / df["revenue_ttm_lag4Q"].replace(0, np.nan) - 1
     if {"net_profit_ttm", "net_profit_ttm_lag4Q"}.issubset(df.columns):
         df["profit_growth_ttm"] = df["net_profit_ttm"] / df["net_profit_ttm_lag4Q"].replace(0, np.nan) - 1
+    if {"gross_profit", "revenue"}.issubset(df.columns):
+        df["gross_margin"] = df["gross_profit"] / df["revenue"].replace(0, np.nan)
     return df
 
 
