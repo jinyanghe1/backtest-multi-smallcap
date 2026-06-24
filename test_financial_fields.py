@@ -56,6 +56,30 @@ def test_gross_margin_derivation_uses_notice_date():
     assert abs(derived.loc[1, "gross_margin"] - 0.4) < 0.01
 
 
+def test_net_margin_and_asset_turnover_derivation():
+    """net_margin = net_profit / revenue; asset_turnover = revenue / total_assets."""
+    financials = pd.DataFrame({
+        "symbol": ["sh600000"] * 2,
+        "report_date": [pd.Timestamp("2023-06-30"), pd.Timestamp("2023-09-30")],
+        "notice_date": [pd.Timestamp("2023-07-28"), pd.Timestamp("2023-10-28")],
+        "revenue": [100.0, 200.0],
+        "net_profit": [10.0, 25.0],
+        "total_assets": [500.0, 600.0],
+    })
+    prices = pd.DataFrame({
+        "symbol": ["sh600000", "sh600000"],
+        "date": [pd.Timestamp("2023-07-01"), pd.Timestamp("2023-08-01")],
+        "close": [10.0, 11.0],
+    })
+    derived = derive_financial_fields(
+        financials, prices, fields=["net_margin", "asset_turnover"]
+    )
+    # On 2023-08-01: notice 2023-07-28 available
+    # net_margin = 10/100 = 0.1; asset_turnover = 100/500 = 0.2
+    assert abs(derived.loc[1, "net_margin"] - 0.1) < 0.01
+    assert abs(derived.loc[1, "asset_turnover"] - 0.2) < 0.01
+
+
 def test_roa_ttm_derivation_uses_notice_date():
     """roa_ttm = net_profit_ttm / total_assets, aligned by notice_date."""
     financials = pd.DataFrame({

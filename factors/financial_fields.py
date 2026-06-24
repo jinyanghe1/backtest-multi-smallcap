@@ -36,6 +36,8 @@ FIELD_SPECS: dict[str, FieldSpec] = {
     "revenue_growth_ttm": FieldSpec("营收TTM增速", "ratio", ("derived",), "(revenue_ttm / revenue_ttm_lag4Q) - 1", ("revenue",), True),
     "profit_growth_ttm": FieldSpec("净利润TTM增速", "ratio", ("derived",), "(net_profit_ttm / net_profit_ttm_lag4Q) - 1", ("net_profit",), True),
     "gross_margin": FieldSpec("毛利率", "ratio", ("derived",), "gross_profit / revenue", ("gross_profit", "revenue"), True),
+    "net_margin": FieldSpec("净利率", "ratio", ("derived",), "net_profit / revenue", ("net_profit", "revenue"), True),
+    "asset_turnover": FieldSpec("资产周转率", "ratio", ("derived",), "revenue / total_assets", ("revenue", "total_assets"), True),
 }
 
 
@@ -70,6 +72,10 @@ def _add_ttm_fields(financials: pd.DataFrame) -> pd.DataFrame:
         df["profit_growth_ttm"] = df["net_profit_ttm"] / df["net_profit_ttm_lag4Q"].replace(0, np.nan) - 1
     if {"gross_profit", "revenue"}.issubset(df.columns):
         df["gross_margin"] = df["gross_profit"] / df["revenue"].replace(0, np.nan)
+    if {"net_profit", "revenue"}.issubset(df.columns):
+        df["net_margin"] = df["net_profit"] / df["revenue"].replace(0, np.nan)
+    if {"revenue", "total_assets"}.issubset(df.columns):
+        df["asset_turnover"] = df["revenue"] / df["total_assets"].replace(0, np.nan)
     return df
 
 
