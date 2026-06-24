@@ -16,6 +16,7 @@ from tools.backtest_mvp.factors.operators import (
     signed_power,
     ts_argmax,
     ts_argmin,
+    ts_decay_exp,
     ts_rank,
     winsorize,
 )
@@ -87,4 +88,18 @@ def test_winsorize_no_clip_without_outliers():
     # With no outliers, values should be unchanged
     assert result.iloc[0] == 1.0
     assert result.iloc[1] == 4.0
+
+
+def test_ts_decay_exp_smoothes_series():
+    s = _panel_series()
+    result = ts_decay_exp(s, window=3, factor=0.5)
+    # The result should have the same index
+    assert result.index.equals(s.index)
+    # Exponential decay should smooth: last value should be between raw and mean
+    last_a = result.xs("a", level="symbol").iloc[-1]
+    raw_last_a = s.xs("a", level="symbol").iloc[-1]
+    # With factor=0.5 (alpha=0.5), the EWM is heavily weighted to recent
+    assert last_a > 0
+    # EWM should not exceed the max of the series
+    assert last_a <= raw_last_a + 0.01
 

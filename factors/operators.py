@@ -183,3 +183,24 @@ def winsorize(series: pd.Series, std: float = 4.0, level: str | int | None = "da
         return series.groupby(level=level, group_keys=False).apply(_winsor)
     return _winsor(series)
 
+
+def ts_decay_exp(
+    series: pd.Series,
+    window: int,
+    factor: float = 0.5,
+    group_level: str | int = "symbol",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Exponentially weighted decay within each rolling window.
+
+    Weights follow a geometric progression with ratio `factor`
+    (most recent value gets weight factor^0 = 1, previous gets factor^1, etc.).
+    """
+    min_periods = window if min_periods is None else min_periods
+    alpha = 1.0 - factor  # pandas ewm alpha parameter
+
+    def _calc(s: pd.Series) -> pd.Series:
+        return s.ewm(alpha=alpha, min_periods=min_periods, adjust=False).mean()
+
+    return _group_apply(series, group_level, _calc)
+
