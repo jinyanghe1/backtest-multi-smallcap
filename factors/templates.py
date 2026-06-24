@@ -1,0 +1,109 @@
+"""Panel-level alpha templates built from the operator layer."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+import pandas as pd
+
+from .operators import decay_linear, delta, group_rank, rank, ts_rank
+
+
+def _require_columns(frame: pd.DataFrame, columns: Sequence[str]) -> None:
+    missing = [col for col in columns if col not in frame.columns]
+    if missing:
+        raise KeyError(f"factor_panel missing required columns: {missing}")
+
+
+def template_fundamental_value(
+    factor_panel: pd.DataFrame,
+    field: str = "roe_ttm",
+    window: int = 126,
+    group_col: str = "sw_industry_2",
+) -> pd.Series:
+    """group_rank(ts_rank(field, window), group_col)."""
+    _require_columns(factor_panel, [field])
+    signal = ts_rank(factor_panel[field], window)
+    if group_col in factor_panel.columns:
+        return group_rank(signal, factor_panel[group_col])
+    return rank(signal)
+
+
+def template_technical_momentum(
+    factor_panel: pd.DataFrame,
+    price_field: str = "close",
+    delta_periods: int = 1,
+    ts_rank_window: int = 8,
+    decay_window: int = 20,
+    group_col: str = "sw_industry_1",
+) -> pd.Series:
+    """decay_linear(ts_rank(delta(price), ts_rank_window), decay_window), optionally neutralized."""
+    _require_columns(factor_panel, [price_field])
+    signal = decay_linear(ts_rank(delta(factor_panel[price_field], delta_periods), ts_rank_window), decay_window)
+    if group_col in factor_panel.columns:
+        return group_rank(signal, factor_panel[group_col])
+    return rank(signal)
+
+
+def template_multi_factor_blend(
+    signals: Sequence[pd.Series],
+    weights: Sequence[float] | None = None,
+    group: pd.Series | None = None,
+) -> pd.Series:
+    if not signals:
+        raise ValueError("signals must not be empty")
+    ranked = [rank(signal) for signal in signals]
+    if weights is None:
+        weights = [1.0 / len(ranked)] * len(ranked)
+    if len(weights) != len(ranked):
+        raise ValueError("weights length must match signals length")
+    total_weight = sum(weights)
+    if total_weight == 0:
+        raise ValueError("weights must not sum to zero")
+    blended = sum(signal * weight for signal, weight in zip(ranked, weights)) / total_weight
+    if group is not None:
+        return group_rank(blended, group)
+    return blended
+
+
+GOLDEN_COMBO_SIGNALS = {
+    "mcap": -1,
+    "pb": -1,
+    "mom20d": 1,
+    "vol20d": -1,
+    "max_ret": -1,
+    "roe_ttm": 1,
+    "revenue_growth_ttm": 1,
+}
+
+
+def golden_combo(factor_panel: pd.DataFrame, window: int = 20, group_col: str = "sw_industry_2") -> pd.Series:
+    signals = []
+    for field, direction in GOLDEN_COMBO_SIGNALS.items():
+        if field in factor_panel.columns:
+            signal = ts_rank(factor_panel[field], window)
+            signals.append(signal if direction > 0 else -signal)
+    if not signals:
+        raise KeyError("factor_panel has none of the supported golden_combo fields")
+    group = factor_panel[group_col] if group_col in factor_panel.columns else None
+    return template_multi_factor_blend(signals, group=group)
+
+
+def add_template_signals(
+    factor_panel: pd.DataFrame,
+    template_names: Sequence[str],
+    **kwargs,
+) -> pd.DataFrame:
+    """Append requested template signals as new factor columns."""
+    result = factor_panel.copy()
+    for name in template_names:
+        if name == "fundamental_value":
+            result[name] = template_fundamental_value(result, **kwargs.get(name, {}))
+        elif name == "technical_momentum":
+            result[name] = template_technical_momentum(result, **kwargs.get(name, {}))
+        elif name == "golden_combo":
+            result[name] = golden_combo(result, **kwargs.get(name, {}))
+        else:
+            raise KeyError(f"unknown template: {name}")
+    return result
+

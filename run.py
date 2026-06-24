@@ -15,6 +15,9 @@
 
   # 回测单个策略
   python tools/backtest_mvp/run.py backtest --strategy 3
+
+  # 回测模板信号
+  python tools/backtest_mvp/run.py backtest --template golden_combo --template-window 20
 """
 
 import sys
@@ -74,6 +77,36 @@ def print_result_table(name: str, result: BacktestResult):
           f"胜率 {result.win_rate:>5.1f}%  "
           f"换手 {result.avg_turnover:>5.1f}%  "
           f"终值 {result.terminal_value:>6.2f}x")
+
+
+def run_template_backtest(
+    template_name: str,
+    factor_panel: pd.DataFrame,
+    return_panel: pd.DataFrame,
+    n_stocks: int = 30,
+    ascending: bool = False,
+    template_kwargs: dict = None,
+) -> BacktestResult:
+    """Compute a panel-level template signal and run it through the engine."""
+    from tools.backtest_mvp.factors.templates import add_template_signals
+
+    template_kwargs = template_kwargs or {}
+    enriched = add_template_signals(
+        factor_panel,
+        [template_name],
+        **{template_name: template_kwargs},
+    )
+    engine = CrossSectionalEngine(
+        factor_panel=enriched,
+        return_panel=return_panel,
+        initial_capital=1.0,
+        n_stocks=n_stocks,
+        rebalance_freq='M',
+        commission=0.00125,
+        slippage=0.002,
+        price_limit_stocks=True,
+    )
+    return engine.run(ranking_factor=template_name, ascending=ascending)
 
 
 
@@ -160,7 +193,24 @@ def cmd_backtest(args: list):
     factor_panel, return_panel = compute_factors(data, mcap_pb_data=mcap_pb)
 
     # 运行
-    if "--strategy" in args:
+    if "--template" in args:
+        template_name = args[args.index("--template") + 1]
+        n_stocks = int(args[args.index("--n") + 1]) if "--n" in args else 30
+        template_kwargs = {}
+        if "--template-window" in args:
+            template_kwargs["window"] = int(args[args.index("--template-window") + 1])
+        result = run_template_backtest(
+            template_name,
+            factor_panel,
+            return_panel,
+            n_stocks=n_stocks,
+            ascending=False,
+            template_kwargs=template_kwargs,
+        )
+        print(f"\n模板信号 {template_name}:")
+        print(f"  年化: {result.annual_return}% | 夏普: {result.sharpe_ratio} | "
+              f"回撤: {result.max_drawdown}% | 终值: {result.terminal_value}x")
+    elif "--strategy" in args:
         idx = int(args[args.index("--strategy") + 1]) - 1
         all_strats = ALL_STRATEGIES + NEW_STRATEGIES
         if 0 <= idx < len(all_strats):
@@ -204,7 +254,7 @@ def main():
         print()
         print("  download    - 下载微盘股数据 (--n 30 控制数量)")
         print("  status      - 查看数据缓存状态")
-        print("  backtest    - 运行全部策略回测 (--strategy 1-6 选单个)")
+        print("  backtest    - 运行全部策略回测 (--strategy 1-6 选单个, --template golden_combo 跑模板信号)")
         return
 
     cmd = sys.argv[1]

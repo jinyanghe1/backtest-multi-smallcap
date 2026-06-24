@@ -26,6 +26,9 @@ from typing import Tuple, List, Optional
 import glob
 
 
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+
+
 def load_price_data(data_dir: str, symbols: Optional[List[str]] = None) -> pd.DataFrame:
     """
     加载所有股票的 Parquet 日线, 合并为统一 DataFrame
@@ -143,7 +146,7 @@ def compute_factors(price_data: pd.DataFrame,
         data['pe'] = data['pe'].clip(lower=-10000, upper=10000)  # PE 极端值截断
 
     # 集成名称 (用于 ST 过滤)
-    name_lookup_path = Path(__file__).parent / "name_lookup.parquet"
+    name_lookup_path = PROJECT_DIR / "name_lookup.parquet"
     if name_lookup_path.exists():
         names = pd.read_parquet(name_lookup_path)
         data['name'] = data['symbol'].map(names['name']).fillna('')
