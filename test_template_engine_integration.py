@@ -3,6 +3,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+import io
+import sys
+from contextlib import redirect_stdout
+
 import pandas as pd
 
 from tools.backtest_mvp.run import run_template_backtest
@@ -38,4 +42,22 @@ def test_run_template_backtest_golden_combo():
 
     assert result.terminal_value > 0
     assert result.annual_return is not None
+
+
+def test_run_template_backtest_prints_signal_coverage():
+    factor_panel, return_panel = _panels()
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        result = run_template_backtest(
+            "golden_combo",
+            factor_panel,
+            return_panel,
+            n_stocks=1,
+            template_kwargs={"window": 2},
+        )
+    output = buf.getvalue()
+    assert "[signal]" in output
+    assert "coverage=" in output
+    assert "params:" in output
+    assert result.terminal_value > 0
 

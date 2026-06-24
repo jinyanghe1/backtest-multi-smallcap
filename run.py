@@ -96,6 +96,25 @@ def run_template_backtest(
         [template_name],
         **{template_name: template_kwargs},
     )
+
+    # Signal coverage diagnostics
+    if template_name in enriched.columns:
+        signal = enriched[template_name]
+        total = len(signal)
+        non_null = signal.notna().sum()
+        coverage = non_null / total if total > 0 else 0.0
+        # Per-date coverage
+        if isinstance(signal.index, pd.MultiIndex) and "date" in signal.index.names:
+            per_date = signal.groupby(level="date").apply(lambda s: s.notna().mean())
+            min_cov = per_date.min() if len(per_date) > 0 else 0.0
+            max_cov = per_date.max() if len(per_date) > 0 else 0.0
+        else:
+            min_cov = max_cov = coverage
+        print(f"  [signal] {template_name}: coverage={coverage:.1%} "
+              f"(per-date: min={min_cov:.1%} max={max_cov:.1%}), "
+              f"non-null={non_null}/{total}")
+        print(f"  [signal] params: {template_kwargs}")
+
     engine = CrossSectionalEngine(
         factor_panel=enriched,
         return_panel=return_panel,
