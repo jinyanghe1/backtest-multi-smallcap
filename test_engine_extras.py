@@ -138,3 +138,25 @@ def test_rolling_sharpe_in_result():
     result = engine.run(ranking_factor="alpha_signal", ascending=False)
     assert hasattr(result, "rolling_sharpe")
     assert result.rolling_sharpe is not None
+
+
+# ── T07: turnover_attribution ──
+
+def test_turnover_attribution_in_result():
+    """BacktestResult should contain turnover_attribution dict."""
+    fp, rp = _panels_with_predictive_signal()
+    engine = CrossSectionalEngine(
+        factor_panel=fp, return_panel=rp,
+        n_stocks=2, rebalance_freq='M',
+        commission=0.0, slippage=0.0, price_limit_stocks=False,
+    )
+    result = engine.run(ranking_factor="alpha_signal", ascending=False)
+    assert hasattr(result, "turnover_attribution")
+    attr = result.turnover_attribution
+    assert isinstance(attr, dict)
+    assert "rebalance_turnover" in attr
+    assert "price_drift_turnover" in attr
+    assert "total_turnover" in attr
+    assert attr["total_turnover"] == attr["rebalance_turnover"] + attr["price_drift_turnover"]
+    assert attr["rebalance_turnover"] >= 0
+    assert attr["price_drift_turnover"] >= 0

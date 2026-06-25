@@ -42,6 +42,7 @@ class BacktestResult:
     monthly_ic_heatmap: pd.DataFrame = None  # IC 按月热力图 (index=year, columns=month)
     max_drawdown_recovery_time: int = 0  # 最大回撤恢复天数 (谷底→创新高)
     rolling_sharpe: pd.Series = None      # 滚动夏普比率序列
+    turnover_attribution: dict = None     # 换手率分解 {rebalance, price_drift, total}
 
 
 def compute_monthly_ic_heatmap(ic_series: pd.Series) -> pd.DataFrame:
@@ -111,6 +112,35 @@ def _compute_rolling_sharpe(monthly_returns: pd.Series, window: int = 12) -> pd.
     excess = rolling_mean - annual_rf_monthly
     annualized = excess / rolling_std.replace(0, np.nan) * np.sqrt(12)
     return annualized.dropna()
+
+
+def _compute_turnover_attribution(
+    turnover_log: list[float],
+    monthly_returns: pd.Series,
+) -> dict:
+    """Decompose turnover into rebalancing-driven and price-drift components.
+
+    - ``rebalance_turnover``: average turnover from explicit rebalancing
+      (what the engine already tracks — fraction of portfolio replaced).
+    - ``price_drift_turnover``: estimated passive turnover from price changes
+      within each holding period, computed as the average absolute deviation
+      of monthly returns from zero (proxy for weight drift).
+    - ``total_turnover``: sum of both components.
+
+    Returns a dict with float values (0–1 scale).
+    """
+    rebal_avg = float(np.mean(turnover_log)) if turnover_log else 0.0
+    # Price drift proxy: average |monthly return| measures how much weights
+    # would drift if no rebalancing occurred
+    if monthly_returns is not None and len(monthly_returns) > 0:
+        drift_proxy = float(monthly_returns.abs().mean()) / 2.0
+    else:
+        drift_proxy = 0.0
+    return {
+        "rebalance_turnover": rebal_avg,
+        "price_drift_turnover": drift_proxy,
+        "total_turnover": rebal_avg + drift_proxy,
+    }
 
 
 class CrossSectionalEngine:
@@ -493,6 +523,11 @@ class CrossSectionalEngine:
         # --- Rolling Sharpe ---
         rolling_sharpe_series = _compute_rolling_sharpe(monthly_ret, window=12)
 
+        # --- Turnover attribution ---
+        turnover_attr = _compute_turnover_attribution(
+            turnover_log, monthly_ret
+        )
+
         result = BacktestResult(
             equity_curve=equity_series,
             monthly_returns=monthly_ret,
@@ -513,6 +548,7 @@ class CrossSectionalEngine:
             monthly_ic_heatmap=ic_heatmap,
             max_drawdown_recovery_time=recovery_days,
             rolling_sharpe=rolling_sharpe_series,
+            turnover_attribution=turnover_attr,
         )
         return result
 
