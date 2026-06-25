@@ -251,3 +251,57 @@ def factor_decay_halflife(
     # IC never drops to half — return the largest lag tested
     return float(sorted_lags[-1])
 
+
+def walk_forward_validation_split(
+    factor_panel: "pd.DataFrame",
+    train_ratio: float = 0.6,
+    validation_ratio: float = 0.2,
+) -> tuple["pd.DataFrame", "pd.DataFrame", "pd.DataFrame"]:
+    """Split a factor panel into train / validation / test sets by date.
+
+    Walk-forward design: the split is purely temporal — no leakage from
+    later periods into earlier ones.
+
+    Parameters
+    ----------
+    factor_panel : DataFrame with MultiIndex (date, symbol)
+    train_ratio : fraction of dates for training (default 0.6)
+    validation_ratio : fraction for validation (default 0.2)
+        Test ratio = 1 - train_ratio - validation_ratio.
+
+    Returns
+    -------
+    (train_df, val_df, test_df) — each a subset of factor_panel.
+
+    Raises
+    ------
+    ValueError if ratios are invalid or panel has no date level.
+    """
+    import pandas as pd
+
+    if not (0 < train_ratio < 1) or not (0 <= validation_ratio < 1):
+        raise ValueError("ratios must be in (0, 1) for train and [0, 1) for validation")
+    if train_ratio + validation_ratio >= 1.0:
+        raise ValueError("train_ratio + validation_ratio must be < 1.0")
+
+    if "date" not in factor_panel.index.names:
+        raise ValueError("factor_panel must have a 'date' level in its MultiIndex")
+
+    dates = factor_panel.index.get_level_values("date").unique().sort_values()
+    n = len(dates)
+    if n < 3:
+        raise ValueError(f"need at least 3 dates for walk-forward split, got {n}")
+
+    train_end = int(n * train_ratio)
+    val_end = int(n * (train_ratio + validation_ratio))
+
+    train_dates = dates[:train_end]
+    val_dates = dates[train_end:val_end]
+    test_dates = dates[val_end:]
+
+    train_df = factor_panel[factor_panel.index.get_level_values("date").isin(train_dates)]
+    val_df = factor_panel[factor_panel.index.get_level_values("date").isin(val_dates)]
+    test_df = factor_panel[factor_panel.index.get_level_values("date").isin(test_dates)]
+
+    return train_df, val_df, test_df
+

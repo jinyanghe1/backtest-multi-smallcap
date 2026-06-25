@@ -7,7 +7,11 @@ import pandas as pd
 import numpy as np
 
 from tools.backtest_mvp.research_loop import AlphaCandidate, ResearchLoop, validate_metrics
-from tools.backtest_mvp.research_loop.validators import validate_signal_coverage, factor_decay_halflife
+from tools.backtest_mvp.research_loop.validators import (
+    validate_signal_coverage,
+    factor_decay_halflife,
+    walk_forward_validation_split,
+)
 
 
 def _panels():
@@ -131,4 +135,68 @@ def test_factor_decay_halflife_single_lag():
     decay = {1: 0.10}
     hl = factor_decay_halflife(decay)
     assert hl == 1.0
+
+
+# ── T10: walk_forward_validation_split ──
+
+def test_walk_forward_split_basic():
+    """60/20/20 split on 100 dates."""
+    dates = pd.bdate_range("2024-01-01", periods=100)
+    symbols = ["a", "b", "c"]
+    idx = pd.MultiIndex.from_product([dates, symbols], names=["date", "symbol"])
+    panel = pd.DataFrame({"signal": range(len(idx))}, index=idx)
+    train, val, test = walk_forward_validation_split(panel, 0.6, 0.2)
+    # 60 dates for train, 20 for val, 20 for test
+    assert len(train.index.get_level_values("date").unique()) == 60
+    assert len(val.index.get_level_values("date").unique()) == 20
+    assert len(test.index.get_level_values("date").unique()) == 20
+
+
+def test_walk_forward_split_no_overlap():
+    """Train, val, test dates should not overlap."""
+    dates = pd.bdate_range("2024-01-01", periods=50)
+    symbols = ["a", "b"]
+    idx = pd.MultiIndex.from_product([dates, symbols], names=["date", "symbol"])
+    panel = pd.DataFrame({"signal": range(len(idx))}, index=idx)
+    train, val, test = walk_forward_validation_split(panel, 0.6, 0.2)
+    train_dates = set(train.index.get_level_values("date"))
+    val_dates = set(val.index.get_level_values("date"))
+    test_dates = set(test.index.get_level_values("date"))
+    assert not train_dates & val_dates
+    assert not train_dates & test_dates
+    assert not val_dates & test_dates
+
+
+def test_walk_forward_split_temporal_order():
+    """All train dates < all val dates < all test dates."""
+    dates = pd.bdate_range("2024-01-01", periods=30)
+    symbols = ["a"]
+    idx = pd.MultiIndex.from_product([dates, symbols], names=["date", "symbol"])
+    panel = pd.DataFrame({"signal": range(30)}, index=idx)
+    train, val, test = walk_forward_validation_split(panel, 0.5, 0.3)
+    assert train.index.get_level_values("date").max() < val.index.get_level_values("date").min()
+    assert val.index.get_level_values("date").max() < test.index.get_level_values("date").min()
+
+
+def test_walk_forward_split_invalid_ratios():
+    """Invalid ratios should raise ValueError."""
+    dates = pd.bdate_range("2024-01-01", periods=10)
+    symbols = ["a"]
+    idx = pd.MultiIndex.from_product([dates, symbols], names=["date", "symbol"])
+    panel = pd.DataFrame({"signal": range(10)}, index=idx)
+    try:
+        walk_forward_validation_split(panel, 0.8, 0.3)
+        assert False, "Should have raised"
+    except ValueError:
+        pass
+
+
+def test_walk_forward_split_no_date_level():
+    """Panel without date level should raise ValueError."""
+    panel = pd.DataFrame({"signal": [1, 2, 3]}, index=pd.Index(["x", "y", "z"], name="symbol"))
+    try:
+        walk_forward_validation_split(panel)
+        assert False, "Should have raised"
+    except ValueError:
+        pass
 
