@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import pandas as pd
 
-from tools.backtest_mvp.factors.financial_fields import derive_financial_fields, get_field_spec
+from tools.backtest_mvp.factors.financial_fields import derive_financial_fields, get_field_spec, _add_ttm_fields
 
 
 def test_derive_financial_fields_uses_notice_date_not_report_date():
@@ -103,4 +103,55 @@ def test_roa_ttm_derivation_uses_notice_date():
     val = last_row["roa_ttm"].iloc[0]
     assert not pd.isna(val), "roa_ttm should be non-null after 4 quarters of data"
     assert abs(val - 0.2) < 0.01
+
+
+# ── T08: operating_cashflow_ttm and operating_cashflow_to_revenue ──
+
+def test_operating_cashflow_ttm_derivation():
+    """operating_cashflow_ttm = rolling 4-quarter sum of operating_cashflow."""
+    financials = pd.DataFrame({
+        "symbol": ["sh600000"] * 5,
+        "report_date": pd.date_range("2023-03-31", periods=5, freq="QE"),
+        "notice_date": pd.date_range("2023-04-28", periods=5, freq="91D"),
+        "operating_cashflow": [10.0, 20.0, 30.0, 40.0, 50.0],
+        "revenue": [100.0, 100.0, 100.0, 100.0, 100.0],
+    })
+    result = _add_ttm_fields(financials)
+    # After 4 quarters, TTM should be 10+20+30+40 = 100
+    assert "operating_cashflow_ttm" in result.columns
+    ttm_val = result.iloc[3]["operating_cashflow_ttm"]
+    assert not pd.isna(ttm_val)
+    assert abs(ttm_val - 100.0) < 0.01
+    # 5th quarter: 20+30+40+50 = 140
+    ttm_val_5 = result.iloc[4]["operating_cashflow_ttm"]
+    assert abs(ttm_val_5 - 140.0) < 0.01
+
+
+def test_operating_cashflow_to_revenue_derivation():
+    """operating_cashflow_to_revenue = operating_cashflow_ttm / revenue_ttm."""
+    financials = pd.DataFrame({
+        "symbol": ["sh600000"] * 5,
+        "report_date": pd.date_range("2023-03-31", periods=5, freq="QE"),
+        "notice_date": pd.date_range("2023-04-28", periods=5, freq="91D"),
+        "operating_cashflow": [10.0, 20.0, 30.0, 40.0, 50.0],
+        "revenue": [100.0, 100.0, 100.0, 100.0, 100.0],
+    })
+    result = _add_ttm_fields(financials)
+    assert "operating_cashflow_to_revenue" in result.columns
+    # After 4 quarters: ocf_ttm=100, revenue_ttm=400 → ratio = 0.25
+    ratio = result.iloc[3]["operating_cashflow_to_revenue"]
+    assert not pd.isna(ratio)
+    assert abs(ratio - 0.25) < 0.01
+
+
+def test_operating_cashflow_field_specs():
+    """Field specs should be registered for new cashflow fields."""
+    spec_ocf = get_field_spec("operating_cashflow")
+    assert spec_ocf.status == "available"
+    spec_ttm = get_field_spec("operating_cashflow_ttm")
+    assert spec_ttm.status == "available"
+    assert spec_ttm.requires == ("operating_cashflow",)
+    spec_ratio = get_field_spec("operating_cashflow_to_revenue")
+    assert spec_ratio.status == "available"
+    assert spec_ratio.higher_is_better is True
 

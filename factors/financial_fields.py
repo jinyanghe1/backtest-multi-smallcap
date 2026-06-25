@@ -31,6 +31,7 @@ FIELD_SPECS: dict[str, FieldSpec] = {
     "pe": FieldSpec("市盈率", "ratio", ("eastmoney", "westock"), "close / eps"),
     "gross_profit": FieldSpec("毛利润", "元", ("eastmoney", "ths", "sina")),
     "total_assets": FieldSpec("资产总计", "元", ("eastmoney", "sina", "ths")),
+    "operating_cashflow": FieldSpec("经营活动现金流", "元", ("eastmoney", "ths", "sina")),
     "roe_ttm": FieldSpec("ROE(TTM)", "ratio", ("derived",), "net_profit_ttm / total_equity", ("net_profit", "total_equity"), True),
     "roa_ttm": FieldSpec("ROA(TTM)", "ratio", ("derived",), "net_profit_ttm / total_assets", ("net_profit", "total_assets"), True),
     "revenue_growth_ttm": FieldSpec("营收TTM增速", "ratio", ("derived",), "(revenue_ttm / revenue_ttm_lag4Q) - 1", ("revenue",), True),
@@ -38,6 +39,8 @@ FIELD_SPECS: dict[str, FieldSpec] = {
     "gross_margin": FieldSpec("毛利率", "ratio", ("derived",), "gross_profit / revenue", ("gross_profit", "revenue"), True),
     "net_margin": FieldSpec("净利率", "ratio", ("derived",), "net_profit / revenue", ("net_profit", "revenue"), True),
     "asset_turnover": FieldSpec("资产周转率", "ratio", ("derived",), "revenue / total_assets", ("revenue", "total_assets"), True),
+    "operating_cashflow_ttm": FieldSpec("经营现金流(TTM)", "元", ("derived",), "sum(operating_cashflow, 4Q)", ("operating_cashflow",), True),
+    "operating_cashflow_to_revenue": FieldSpec("现金流营收比", "ratio", ("derived",), "operating_cashflow_ttm / revenue_ttm", ("operating_cashflow", "revenue"), True),
 }
 
 
@@ -53,7 +56,7 @@ def _add_ttm_fields(financials: pd.DataFrame) -> pd.DataFrame:
     df["report_date"] = pd.to_datetime(df["report_date"], errors="coerce")
     df["notice_date"] = pd.to_datetime(df["notice_date"], errors="coerce")
     df = df.sort_values(["symbol", "report_date"])
-    for col in ["revenue", "net_profit"]:
+    for col in ["revenue", "net_profit", "operating_cashflow"]:
         if col in df.columns:
             df[f"{col}_ttm"] = (
                 df.groupby("symbol")[col]
@@ -76,6 +79,8 @@ def _add_ttm_fields(financials: pd.DataFrame) -> pd.DataFrame:
         df["net_margin"] = df["net_profit"] / df["revenue"].replace(0, np.nan)
     if {"revenue", "total_assets"}.issubset(df.columns):
         df["asset_turnover"] = df["revenue"] / df["total_assets"].replace(0, np.nan)
+    if {"operating_cashflow_ttm", "revenue_ttm"}.issubset(df.columns):
+        df["operating_cashflow_to_revenue"] = df["operating_cashflow_ttm"] / df["revenue_ttm"].replace(0, np.nan)
     return df
 
 
