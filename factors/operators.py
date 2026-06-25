@@ -233,3 +233,38 @@ def ts_quantile(
         lambda s: s.rolling(window, min_periods=min_periods).quantile(quantile),
     )
 
+
+def ts_skew(
+    series: pd.Series,
+    window: int,
+    group_level: str | int = "symbol",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Rolling skewness within each group.
+
+    Captures asymmetry in the return distribution. Positive skew →
+    right-tailed (lottery-like); negative skew → left-tailed (crash-prone).
+    """
+    min_periods = window if min_periods is None else min_periods
+    return _group_apply(
+        series, group_level,
+        lambda s: s.rolling(window, min_periods=min_periods).skew(),
+    )
+
+
+def ts_kurt(
+    series: pd.Series,
+    window: int,
+    group_level: str | int = "symbol",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Rolling kurtosis within each group (Fisher's definition, excess kurtosis).
+
+    High kurtosis → fat tails → extreme events more likely than normal.
+    """
+    min_periods = window if min_periods is None else min_periods
+    return _group_apply(
+        series, group_level,
+        lambda s: s.rolling(window, min_periods=min_periods).kurt(),
+    )
+

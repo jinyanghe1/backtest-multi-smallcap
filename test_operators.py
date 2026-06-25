@@ -17,7 +17,11 @@ from tools.backtest_mvp.factors.operators import (
     ts_argmax,
     ts_argmin,
     ts_decay_exp,
+    ts_kurt,
+    ts_quantile,
     ts_rank,
+    ts_skew,
+    ts_std_dev,
     winsorize,
 )
 
@@ -102,4 +106,54 @@ def test_ts_decay_exp_smoothes_series():
     assert last_a > 0
     # EWM should not exceed the max of the series
     assert last_a <= raw_last_a + 0.01
+
+
+# ── T09: ts_skew and ts_kurt ──
+
+def test_ts_skew_outputs_aligned():
+    s = _panel_series()
+    result = ts_skew(s, window=3)
+    assert result.index.equals(s.index)
+
+
+def test_ts_skew_positive_for_right_tail():
+    """A series with a large positive outlier should have positive skew."""
+    dates = pd.date_range("2024-01-01", periods=10)
+    symbols = ["a"]
+    idx = pd.MultiIndex.from_product([dates, symbols], names=["date", "symbol"])
+    # Mostly small values with one large spike
+    vals = [1, 1, 1, 1, 1, 1, 1, 1, 1, 10]
+    s = pd.Series(vals, index=idx, dtype=float)
+    result = ts_skew(s, window=10)
+    skew_val = result.dropna().iloc[-1]
+    assert skew_val > 0  # Right-tailed distribution
+
+
+def test_ts_kurt_outputs_aligned():
+    s = _panel_series()
+    result = ts_kurt(s, window=3)
+    assert result.index.equals(s.index)
+
+
+def test_ts_kurt_high_for_outlier():
+    """A series with an outlier should have high kurtosis."""
+    dates = pd.date_range("2024-01-01", periods=20)
+    symbols = ["a"]
+    idx = pd.MultiIndex.from_product([dates, symbols], names=["date", "symbol"])
+    # Normal-ish data with one extreme outlier
+    rng = np.random.RandomState(42)
+    vals = list(rng.randn(19)) + [20.0]
+    s = pd.Series(vals, index=idx, dtype=float)
+    result = ts_kurt(s, window=20)
+    kurt_val = result.dropna().iloc[-1]
+    assert kurt_val > 0  # Excess kurtosis (fat tails)
+
+
+def test_ts_skew_kurt_with_min_periods():
+    """min_periods should allow partial window computation."""
+    s = _panel_series()
+    result = ts_skew(s, window=10, min_periods=2)
+    assert result.notna().sum() > 0
+    result_k = ts_kurt(s, window=10, min_periods=2)
+    assert result_k.notna().sum() > 0
 
