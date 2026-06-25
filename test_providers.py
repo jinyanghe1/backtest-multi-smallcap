@@ -149,3 +149,101 @@ def test_batch_get_partial_failure_raises_batch_error():
         assert "good" in exc.partial_results
     else:
         raise AssertionError("expected BatchFetchError")
+
+
+# ── T11: cache_ttl and cache invalidation ──
+
+class CountingClient:
+    """Tracks how many times fetch_price is called."""
+    def __init__(self):
+        self.calls = 0
+
+    def fetch_price(self, symbol, field, **kwargs):
+        self.calls += 1
+        return pd.Series([1.0, 2.0], index=pd.date_range("2024-01-01", periods=2), name=field)
+
+
+def test_cache_ttl_caches_repeated_calls():
+    """With cache_ttl > 0, repeated get() should not call the client again."""
+    counter = CountingClient()
+    provider = DataProvider(
+        config={"price": {"primary": "counter", "fallback": []}},
+        clients={"counter": counter},
+        retry_delays=(0, 0, 0),
+        rate_limit_delay=0,
+        cache_ttl=60.0,
+    )
+    r1 = provider.get("price", "sh600000", "close")
+    r2 = provider.get("price", "sh600000", "close")
+    assert counter.calls == 1  # Second call should be cached
+    assert r1.source == r2.source
+
+
+def test_cache_ttl_zero_disables_caching():
+    """With cache_ttl=0 (default), every get() should call the client."""
+    counter = CountingClient()
+    provider = DataProvider(
+        config={"price": {"primary": "counter", "fallback": []}},
+        clients={"counter": counter},
+        retry_delays=(0, 0, 0),
+        rate_limit_delay=0,
+        cache_ttl=0,
+    )
+    provider.get("price", "sh600000", "close")
+    provider.get("price", "sh600000", "close")
+    assert counter.calls == 2
+
+
+def test_clear_cache_forces_refetch():
+    """clear_cache should force the next get() to call the client."""
+    counter = CountingClient()
+    provider = DataProvider(
+        config={"price": {"primary": "counter", "fallback": []}},
+        clients={"counter": counter},
+        retry_delays=(0, 0, 0),
+        rate_limit_delay=0,
+        cache_ttl=60.0,
+    )
+    provider.get("price", "sh600000", "close")
+    assert counter.calls == 1
+    provider.clear_cache()
+    provider.get("price", "sh600000", "close")
+    assert counter.calls == 2
+
+
+def test_invalidate_specific_symbol():
+    """invalidate should remove only matching entries."""
+    counter = CountingClient()
+    provider = DataProvider(
+        config={"price": {"primary": "counter", "fallback": []}},
+        clients={"counter": counter},
+        retry_delays=(0, 0, 0),
+        rate_limit_delay=0,
+        cache_ttl=60.0,
+    )
+    provider.get("price", "sh600000", "close")
+    provider.get("price", "sz000001", "close")
+    assert counter.calls == 2
+    removed = provider.invalidate(symbol="sh600000")
+    assert removed == 1
+    # sh600000 should re-fetch, sz000001 should still be cached
+    provider.get("price", "sh600000", "close")
+    provider.get("price", "sz000001", "close")
+    assert counter.calls == 3  # Only sh600000 refetched
+
+
+def test_invalidate_by_category():
+    """invalidate by category should remove all entries in that category."""
+    counter = CountingClient()
+    provider = DataProvider(
+        config={"price": {"primary": "counter", "fallback": []}},
+        clients={"counter": counter},
+        retry_delays=(0, 0, 0),
+        rate_limit_delay=0,
+        cache_ttl=60.0,
+    )
+    provider.get("price", "sh600000", "close")
+    provider.get("price", "sz000001", "close")
+    removed = provider.invalidate(category="price")
+    assert removed == 2
+    assert len(provider._cache) == 0

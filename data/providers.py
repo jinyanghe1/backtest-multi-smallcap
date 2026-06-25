@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Optional
 
 import pandas as pd
@@ -12,6 +13,19 @@ import pandas as pd
 from . import legacy
 
 logger = logging.getLogger(__name__)
+
+
+# ── Cache infrastructure ──
+
+@dataclass
+class _CacheEntry:
+    """Internal cache entry for provider results."""
+    result: "FetchResult"
+    cached_at: float  # time.time() epoch seconds
+
+    def is_fresh(self, ttl: float, now: float | None = None) -> bool:
+        now = time.time() if now is None else now
+        return (now - self.cached_at) < ttl
 
 
 PROVIDERS = {
@@ -196,10 +210,13 @@ class DataProvider:
         clients: Optional[dict] = None,
         retry_delays: tuple[float, float, float] = (3.0, 6.0, 12.0),
         rate_limit_delay: float = 60.0,
+        cache_ttl: float = 0.0,
     ):
         self.config = config or PROVIDERS
         self.retry_delays = retry_delays
         self.rate_limit_delay = rate_limit_delay
+        self.cache_ttl = cache_ttl
+        self._cache: dict[tuple, _CacheEntry] = {}
         self.clients = clients or self._default_clients()
 
     def _default_clients(self) -> dict:
@@ -225,6 +242,14 @@ class DataProvider:
         if category not in self.config:
             raise FieldNotFoundError(f"unknown category: {category}")
 
+        # Check cache (only when cache_ttl > 0 and no date-range filters)
+        cache_key = (category, symbol, field, start, end, asof)
+        if self.cache_ttl > 0:
+            entry = self._cache.get(cache_key)
+            if entry is not None and entry.is_fresh(self.cache_ttl):
+                logger.debug("cache hit for %s/%s/%s", category, symbol, field)
+                return entry.result
+
         provider_cfg = self.config[category]
         providers = [provider_cfg["primary"], *provider_cfg.get("fallback", [])]
         errors: dict[str, str] = {}
@@ -242,7 +267,7 @@ class DataProvider:
                     data = self._fetch(client, category, symbol, field, **fetch_kwargs)
                     if not self._validate(data, category, field):
                         raise DataValidationError(f"invalid data for {category}/{field}")
-                    return FetchResult(
+                    result = FetchResult(
                         data=data,
                         source=provider_name,
                         category=category,
@@ -251,6 +276,12 @@ class DataProvider:
                         timestamp=pd.Timestamp.now(),
                         metadata={"attempt": attempt + 1},
                     )
+                    # Cache the result
+                    if self.cache_ttl > 0:
+                        self._cache[cache_key] = _CacheEntry(
+                            result=result, cached_at=time.time()
+                        )
+                    return result
                 except NetworkError as exc:
                     errors[provider_name] = str(exc)
                     logger.warning("[%s] network error attempt %s: %s", provider_name, attempt + 1, exc)
@@ -285,6 +316,35 @@ class DataProvider:
         if result.data.shape[1] == 1:
             return result.data.iloc[:, 0]
         raise DataValidationError("get_series received multi-column DataFrame")
+
+    def clear_cache(self) -> None:
+        """Invalidate all cached entries."""
+        self._cache.clear()
+
+    def invalidate(
+        self,
+        category: str | None = None,
+        symbol: str | None = None,
+        field: str | None = None,
+    ) -> int:
+        """Invalidate cache entries matching the given filters.
+
+        Any of category/symbol/field can be None (matches all).
+        Returns the number of entries removed.
+        """
+        keys_to_remove = []
+        for key in self._cache:
+            cat, sym, fld = key[0], key[1], key[2]
+            if category is not None and cat != category:
+                continue
+            if symbol is not None and sym != symbol:
+                continue
+            if field is not None and fld != field:
+                continue
+            keys_to_remove.append(key)
+        for key in keys_to_remove:
+            del self._cache[key]
+        return len(keys_to_remove)
 
     def batch_get(
         self,
