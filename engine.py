@@ -39,6 +39,78 @@ class BacktestResult:
     ic_ir: float = 0.0               # IC 信息比率 = ic_mean / ic_std
     ic_series: pd.Series = None      # 逐调仓日 IC 序列
     quantile_spread: float = 0.0     # Q5-Q1 return spread (top-bottom quantile)
+    monthly_ic_heatmap: pd.DataFrame = None  # IC 按月热力图 (index=year, columns=month)
+    max_drawdown_recovery_time: int = 0  # 最大回撤恢复天数 (谷底→创新高)
+    rolling_sharpe: pd.Series = None      # 滚动夏普比率序列
+
+
+def compute_monthly_ic_heatmap(ic_series: pd.Series) -> pd.DataFrame:
+    """Pivot IC series into a year × month heatmap.
+
+    Parameters
+    ----------
+    ic_series : pd.Series indexed by date (rebalance dates)
+
+    Returns
+    -------
+    DataFrame with index=year, columns=1..12, values=mean IC for that month.
+    NaN where no data exists for a given year-month.
+    """
+    if ic_series is None or ic_series.empty:
+        return pd.DataFrame()
+    idx = pd.to_datetime(ic_series.index)
+    df = pd.DataFrame({
+        "year": idx.year,
+        "month": idx.month,
+        "ic": ic_series.values,
+    })
+    heatmap = df.groupby(["year", "month"])["ic"].mean().unstack(level="month")
+    # Ensure columns are 1..12 even if some months are missing
+    heatmap = heatmap.reindex(columns=range(1, 13))
+    heatmap.columns.name = "month"
+    heatmap.index.name = "year"
+    return heatmap
+
+
+def _compute_max_drawdown_recovery_time(equity_curve: pd.Series) -> int:
+    """Days from max-drawdown trough to the date the curve first reaches a new high.
+
+    Returns 0 if the curve never made a new high after the trough,
+    or if there is no drawdown.
+    """
+    if equity_curve is None or equity_curve.empty:
+        return 0
+    peak = equity_curve.expanding().max()
+    dd = (equity_curve - peak) / peak
+    trough_idx = dd.idxmin()
+    trough_val = equity_curve.loc[trough_idx]
+    # Find first date after trough where equity >= pre-trough peak
+    pre_trough_peak = peak.loc[trough_idx]
+    after = equity_curve.loc[trough_idx:]
+    new_high_dates = after[after >= pre_trough_peak].index
+    if len(new_high_dates) == 0:
+        return 0
+    recovery_date = new_high_dates[0]
+    # Count trading days (index entries) between trough and recovery
+    if isinstance(equity_curve.index, pd.DatetimeIndex):
+        return int((recovery_date - trough_idx).days)
+    return int(equity_curve.index.get_loc(recovery_date) - equity_curve.index.get_loc(trough_idx))
+
+
+def _compute_rolling_sharpe(monthly_returns: pd.Series, window: int = 12) -> pd.Series:
+    """Rolling annualized Sharpe ratio from monthly returns.
+
+    Uses a rolling window of `window` months, annualizes by sqrt(12),
+    and assumes 3% risk-free rate (annual).
+    """
+    if monthly_returns is None or monthly_returns.empty or len(monthly_returns) < 2:
+        return pd.Series(dtype=float)
+    rolling_mean = monthly_returns.rolling(window, min_periods=max(2, window // 2)).mean()
+    rolling_std = monthly_returns.rolling(window, min_periods=max(2, window // 2)).std()
+    annual_rf_monthly = (1 + 0.03) ** (1 / 12) - 1
+    excess = rolling_mean - annual_rf_monthly
+    annualized = excess / rolling_std.replace(0, np.nan) * np.sqrt(12)
+    return annualized.dropna()
 
 
 class CrossSectionalEngine:
@@ -412,6 +484,15 @@ class CrossSectionalEngine:
         # --- Quantile spread (Q5 - Q1) ---
         q_spread = self._compute_quantile_spread(ranking_factor, ranking_fn, composite_factors, factor_weights)
 
+        # --- Monthly IC heatmap ---
+        ic_heatmap = compute_monthly_ic_heatmap(ic_series)
+
+        # --- Max drawdown recovery time ---
+        recovery_days = _compute_max_drawdown_recovery_time(equity_series)
+
+        # --- Rolling Sharpe ---
+        rolling_sharpe_series = _compute_rolling_sharpe(monthly_ret, window=12)
+
         result = BacktestResult(
             equity_curve=equity_series,
             monthly_returns=monthly_ret,
@@ -429,6 +510,9 @@ class CrossSectionalEngine:
             ic_ir=round(ic_ir, 4),
             ic_series=ic_series,
             quantile_spread=round(q_spread, 6),
+            monthly_ic_heatmap=ic_heatmap,
+            max_drawdown_recovery_time=recovery_days,
+            rolling_sharpe=rolling_sharpe_series,
         )
         return result
 
