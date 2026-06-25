@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 
 from tools.backtest_mvp.research_loop import AlphaCandidate, ResearchLoop, validate_metrics
-from tools.backtest_mvp.research_loop.validators import validate_signal_coverage
+from tools.backtest_mvp.research_loop.validators import validate_signal_coverage, factor_decay_halflife
 
 
 def _panels():
@@ -86,4 +86,49 @@ def test_signal_coverage_missing_column():
     panel, _ = _panels()
     result = validate_signal_coverage(panel, "nonexistent")
     assert result["status"] == "error"
+
+
+# ── T03: factor_decay_halflife ──
+
+def test_factor_decay_halflife_basic():
+    """IC decays linearly: 0.10 at lag 1, 0.08 at lag 5, 0.04 at lag 10.
+    Half of 0.10 = 0.05. Should find lag between 5 and 10."""
+    decay = {1: 0.10, 5: 0.08, 10: 0.04}
+    hl = factor_decay_halflife(decay)
+    assert hl is not None
+    assert 5 < hl < 10
+
+
+def test_factor_decay_halflife_exact_half():
+    """IC hits exactly half at lag 10."""
+    decay = {1: 0.10, 5: 0.08, 10: 0.05}
+    hl = factor_decay_halflife(decay)
+    assert hl is not None
+    assert abs(hl - 10.0) < 0.01
+
+
+def test_factor_decay_halflife_never_decays():
+    """IC stays above half → returns largest lag."""
+    decay = {1: 0.10, 5: 0.09, 10: 0.08}
+    hl = factor_decay_halflife(decay)
+    assert hl == 10.0
+
+
+def test_factor_decay_halflife_negative_ic():
+    """Negative initial IC → returns None."""
+    decay = {1: -0.05, 5: -0.03}
+    hl = factor_decay_halflife(decay)
+    assert hl is None
+
+
+def test_factor_decay_halflife_empty():
+    """Empty dict → None."""
+    assert factor_decay_halflife({}) is None
+
+
+def test_factor_decay_halflife_single_lag():
+    """Single lag → returns that lag (can't find decay point)."""
+    decay = {1: 0.10}
+    hl = factor_decay_halflife(decay)
+    assert hl == 1.0
 

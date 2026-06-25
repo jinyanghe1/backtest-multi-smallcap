@@ -215,3 +215,39 @@ def compute_signal_turnover(
 
     return float(np.mean(turnovers)) if turnovers else 0.0
 
+
+def factor_decay_halflife(
+    ic_decay: dict[int, float],
+) -> float | None:
+    """Estimate the half-life of factor IC decay.
+
+    Given the output of ``CrossSectionalEngine.compute_ic_decay`` (a
+    ``{lag: mean_ic}`` mapping), find the lag at which IC decays to
+    half of its initial value (IC at the smallest available lag).
+
+    If IC never drops below half, returns the largest lag.
+    If IC is zero or negative at the first lag, returns ``None``.
+
+    Source: AlphaAgent (arxiv 2502.16789) — decay-resistant factor design.
+    """
+    if not ic_decay:
+        return None
+    sorted_lags = sorted(ic_decay.keys())
+    ic_1 = ic_decay[sorted_lags[0]]
+    if ic_1 is None or ic_1 <= 0:
+        return None
+    half_ic = ic_1 / 2.0
+    for lag in sorted_lags:
+        val = ic_decay[lag]
+        if val is not None and val <= half_ic:
+            # Linear interpolation between previous and current lag
+            prev_lag = sorted_lags[0] if lag == sorted_lags[0] else sorted_lags[sorted_lags.index(lag) - 1]
+            prev_val = ic_decay[prev_lag]
+            if lag == prev_lag or prev_val is None or prev_val == val:
+                return float(lag)
+            # Interpolate: lag_est = prev_lag + (prev_val - half) / (prev_val - val) * (lag - prev_lag)
+            frac = (prev_val - half_ic) / (prev_val - val)
+            return float(prev_lag + frac * (lag - prev_lag))
+    # IC never drops to half — return the largest lag tested
+    return float(sorted_lags[-1])
+
