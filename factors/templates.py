@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import numpy as np
 import pandas as pd
 
 from .operators import decay_linear, delta, group_rank, rank, ts_decay_exp, ts_rank, winsorize
@@ -208,6 +209,130 @@ def template_regime_momentum(
     return rank(signal)
 
 
+def template_overnight_reversal(
+    factor_panel: pd.DataFrame,
+    open_field: str = "open",
+    close_field: str = "close",
+    window: int = 10,
+    group_col: str = "sw_industry_1",
+) -> pd.Series:
+    """Overnight reversal: sell stocks with large overnight gaps (open vs prev close).
+
+    Signal = -ts_rank(overnight_return, window), group-neutralized.
+    Source: mdpi 2227-7072-14-6-145 (long overnight + daytime reversal hybrid).
+    """
+    _require_columns(factor_panel, [open_field, close_field])
+    prev_close = factor_panel[close_field].groupby(level="symbol", group_keys=False).shift(1)
+    overnight_ret = (factor_panel[open_field] - prev_close) / prev_close.replace(0, np.nan)
+    signal = -ts_rank(overnight_ret, window)
+    if group_col in factor_panel.columns:
+        return group_rank(signal, factor_panel[group_col])
+    return rank(signal)
+
+
+def template_sentiment_conditional(
+    factor_panel: pd.DataFrame,
+    turnover_field: str = "turnover",
+    price_field: str = "close",
+    sentiment_window: int = 20,
+    mom_window: int = 10,
+    rev_window: int = 5,
+    sentiment_threshold: float = 0.5,
+    group_col: str = "sw_industry_1",
+) -> pd.Series:
+    """Sentiment-conditional strategy: switch between momentum and reversal
+    based on investor sentiment proxied by turnover rate.
+
+    - High turnover (sentiment high) → use mean reversion (short-term reversal)
+    - Low turnover (sentiment low) → use momentum
+
+    The sentiment threshold is the cross-sectional median of rolling-average
+    turnover. Stocks above the median are "high sentiment", below are "low".
+
+    Source: springer 40854-025-00774 (A股 sentiment-conditional anomalies).
+    """
+    _require_columns(factor_panel, [turnover_field, price_field])
+    # Rolling average turnover as sentiment proxy
+    sentiment = factor_panel[turnover_field].groupby(
+        level="symbol", group_keys=False
+    ).rolling(sentiment_window, min_periods=max(2, sentiment_window // 2)).mean()
+    sentiment = sentiment.reset_index(level=0, drop=True)
+
+    # Momentum and reversal signals
+    price_delta = delta(factor_panel[price_field], 1)
+    mom_signal = ts_rank(price_delta, mom_window)
+    rev_signal = -ts_rank(price_delta, rev_window)
+
+    # Cross-sectional median per date
+    is_high_sentiment = sentiment.groupby(level="date", group_keys=False).transform(
+        lambda s: s > s.median()
+    )
+
+    signal = pd.Series(np.nan, index=factor_panel.index)
+    signal[is_high_sentiment] = rev_signal[is_high_sentiment]
+    signal[~is_high_sentiment] = mom_signal[~is_high_sentiment]
+
+    if group_col in factor_panel.columns:
+        return group_rank(signal, factor_panel[group_col])
+    return rank(signal)
+
+
+def template_ensemble(
+    factor_panel: pd.DataFrame,
+    signal_specs: Sequence[tuple] | None = None,
+    window: int = 20,
+    group_col: str = "sw_industry_2",
+) -> pd.Series:
+    """Multi-factor ensemble: equal-weight blend of several fundamental + technical signals.
+
+    signal_specs is a list of (field, direction) tuples where direction=1 means
+    higher is better, -1 means lower is better. Defaults to a balanced set:
+    roe_ttm (value), mom20d (momentum), vol20d (low-vol), max_ret (lottery).
+
+    Source: arxiv 2507.07107 (ML-enhanced multi-factor cross-sectional approach).
+    """
+    if signal_specs is None:
+        signal_specs = [
+            ("roe_ttm", 1),
+            ("mom20d", 1),
+            ("vol20d", -1),
+            ("max_ret", -1),
+        ]
+    available = [(f, d) for f, d in signal_specs if f in factor_panel.columns]
+    if not available:
+        raise KeyError("factor_panel has none of the ensemble signal fields")
+    signals = []
+    for field, direction in available:
+        sig = ts_rank(factor_panel[field], window)
+        signals.append(sig if direction > 0 else -sig)
+    group = factor_panel[group_col] if group_col in factor_panel.columns else None
+    return template_multi_factor_blend(signals, group=group)
+
+
+def template_multi_timeframe(
+    factor_panel: pd.DataFrame,
+    price_field: str = "close",
+    windows: Sequence[int] = (5, 10, 20, 60),
+    weights: Sequence[float] | None = None,
+    group_col: str = "sw_industry_1",
+) -> pd.Series:
+    """Multi-timeframe momentum fusion.
+
+    Blends ts_rank of price delta across multiple lookback windows.
+    Short-term captures reversal, long-term captures trend.
+    Default: equal weight across windows.
+
+    Source: arxiv 2410.14841 (dynamic factor allocation with regime switching).
+    """
+    _require_columns(factor_panel, [price_field])
+    signals = []
+    for w in windows:
+        sig = ts_rank(delta(factor_panel[price_field], 1), w)
+        signals.append(sig)
+    group = factor_panel[group_col] if group_col in factor_panel.columns else None
+    return template_multi_factor_blend(signals, weights=weights, group=group)
+
+
 def add_template_signals(
     factor_panel: pd.DataFrame,
     template_names: Sequence[str],
@@ -234,6 +359,12 @@ def add_template_signals(
             result[name] = template_regime_momentum(result, **kwargs.get(name, {}))
         elif name == "overnight_reversal":
             result[name] = template_overnight_reversal(result, **kwargs.get(name, {}))
+        elif name == "sentiment_conditional":
+            result[name] = template_sentiment_conditional(result, **kwargs.get(name, {}))
+        elif name == "ensemble":
+            result[name] = template_ensemble(result, **kwargs.get(name, {}))
+        elif name == "multi_timeframe":
+            result[name] = template_multi_timeframe(result, **kwargs.get(name, {}))
         else:
             raise KeyError(f"unknown template: {name}")
     return result
