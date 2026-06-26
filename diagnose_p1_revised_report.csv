@@ -1,0 +1,3 @@
+combo_name,factor_weights,annual_return,sharpe,max_dd,calmar,dsr,ic_ir
+A2_lottery_avoid+A8_quality_value,"{'A2_lottery_avoid': np.float64(0.40477713798251225), 'A8_quality_value': np.float64(0.5952228620174878)}",16.56,0.34,-47.0,0.35234042553191486,0.23,0.0
+A2_lottery_avoid+A8_quality_value,"{'A2_lottery_avoid': 0.5, 'A8_quality_value': 0.5}",16.09,0.33,-48.14,0.33423348566680516,0.22,0.0

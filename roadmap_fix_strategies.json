@@ -1,0 +1,179 @@
+{
+  "version": "2026-06-25-v1",
+  "generated_at": "2026-06-25T11:19:00+08:00",
+  "context": "S4-S11 (8 strategies) all fail within 1-2 rebalance cycles due to stop_loss triggering prematurely. Root cause: stop_loss is checked AFTER the full monthly holding period (engine.py:454-457), not daily. Micro-cap concentrated portfolios can lose 20-30% in a single volatile month, so equity drops well below the stop threshold before the check fires. Backtest starts 2018-11-14 during the tail of the 2018 bear market, making month 1-2 returns exceptionally harsh.",
+  "execution_log": {
+    "2026-06-24_FX01-FX03": "First session: implemented daily stop_loss (FX01), added stop_triggered fields (FX02), recalibrated stop_loss thresholds (FX03). S5 discovered as hidden champion (+55.9% ann). 119 tests pass.",
+    "2026-06-25_FX04": "Added trailing_stop parameter to engine.run(). Trails against peak equity (not initial capital), allowing strategies to lock gains. 4 new unit tests. 123 tests pass total.",
+    "2026-06-25_FX05": "Re-assessed composite_factors conversion. S8 (uses pb/pe derived proxy) and S10 (conditional drift logic) cannot cleanly convert — ranking_fn is the correct implementation. Skipped.",
+    "2026-06-25_FX06": "Added 4 new academic template strategies (E-H): regime_momentum, sentiment_conditional, ensemble, multi_timeframe. Uses pre-computed template signals from factors/templates.py. Added 'close' and 'open' columns to factor_panel for template access. 11 new unit tests, 134 total pass.",
+    "2026-06-25_FX08": "Added robust_start_check: warns if <3 months of data or early months are declining, indicating bear-market start bias.",
+    "2026-06-25_FX07": "Full regression backtest running (19 strategies: 11 original + 4 v2 + 4 template)."
+  },
+
+  "diagnosis": {
+    "failed_strategies": [
+      {"id": "S4",  "name": "次新股+题材共振",            "months_run": 1,  "terminal": 0.70, "stop_loss": -0.20, "root_cause": "Lost ~30% in month 1; stop checked AFTER month → triggered at 0.70 not 0.80"},
+      {"id": "S5",  "name": "壳资源深度价值",             "months_run": 2,  "terminal": 0.61, "stop_loss": -0.25, "root_cause": "Consecutive -12.7%/-29.7% months; stop checked monthly"},
+      {"id": "S6",  "name": "低PB+50%止盈轮动",          "months_run": 2,  "terminal": 0.61, "stop_loss": -0.20, "root_cause": "Same monthly-check lag as S5"},
+      {"id": "S7",  "name": "漂移状态条件反转",           "months_run": 2,  "terminal": 0.61, "stop_loss": -0.20, "root_cause": "ranking_fn works but monthly stop lag kills it"},
+      {"id": "S8",  "name": "盈利能力×低波动复合",        "months_run": 1,  "terminal": 0.70, "stop_loss": -0.15, "root_cause": "Tightest stop; -30% month 1 immediately breaks"},
+      {"id": "S9",  "name": "条件反转→动量切换",          "months_run": 2,  "terminal": 0.61, "stop_loss": -0.20, "root_cause": "Same as S7"},
+      {"id": "S10", "name": "极小市值×盈利×反转三因子",    "months_run": 2,  "terminal": 0.61, "stop_loss": -0.20, "root_cause": "Same as S7"},
+      {"id": "S11", "name": "因子动量动态权重",           "months_run": 2,  "terminal": 0.61, "stop_loss": -0.15, "root_cause": "Same as S8"}
+    ],
+    "working_strategies": [
+      {"id": "S1", "name": "ST困境反转",         "months_run": "full", "annual_return": 49.3, "sharpe": 1.47, "note": "n_stocks=5, stop_loss=-0.30 — stop was wide enough to survive"},
+      {"id": "S2", "name": "小市值动量+高换手",    "months_run": "full", "annual_return": "~flat", "note": "n_stocks=8, stop_loss=-0.15 — barely survived; mom20d ranking may be flat"},
+      {"id": "S3", "name": "极小小市值轮动",       "months_run": "full", "annual_return": 41.9, "sharpe": 0.67, "note": "n_stocks=30, stop_loss=None — no stop, ran full period"}
+    ],
+    "engine_bug": {
+      "file": "engine.py",
+      "lines": "454-457",
+      "description": "stop_loss is checked AFTER `for j, date in enumerate(period_dates)` completes the full month. The daily loop at line 394-427 applies daily returns but does not check stop_loss. By the time line 455 fires, equity is already 10-15pp below the threshold.",
+      "impact": "A -20% stop_loss can result in -30% to -40% actual loss before triggering",
+      "fix_location": "Insert stop_loss check inside the daily loop (after line 425: equity *= (1 + portfolio_return))"
+    }
+  },
+
+  "fix_plan": {
+    "total_todos": 8,
+    "phases": [
+      {
+        "phase": "Phase 1: Engine Fix (P0)",
+        "description": "Fix the core engine bug so stop_loss triggers at the correct equity level. This alone will revive most strategies.",
+        "todos": [
+          {
+            "id": "FX01",
+            "priority": "P0",
+            "file": "engine.py",
+            "task": "Move stop_loss check INSIDE the daily loop (after line 425). When equity drops below threshold, immediately stop and track the remaining period as cash. Also add a `_stop_triggered` flag to BacktestResult so users know if/when stop fired.",
+            "before": "stop_loss check at line 454-457 (after monthly for-loop, monthly lag)",
+            "after": "stop_loss check at line ~427 (inside daily for-loop, same-day precision)",
+            "estimated_lines_changed": 15,
+            "test": "test_engine_extras.py: add test_stop_loss_daily_precision — simulate 5-day period with -5% daily drop; verify stop fires exactly at threshold, not below"
+          },
+          {
+            "id": "FX02",
+            "priority": "P0",
+            "file": "engine.py",
+            "task": "Add `stop_triggered: bool` and `stop_trigger_date: str` to BacktestResult dataclass. Track these during engine.run() so results explicitly report if/when stop loss was hit.",
+            "estimated_lines_changed": 10,
+            "test": "assert result.stop_triggered is True when stop fires; assert result.stop_trigger_date matches"
+          }
+        ]
+      },
+      {
+        "phase": "Phase 2: Strategy Calibration (P0-P1)",
+        "description": "Even with correct daily stop_loss, -15%/-20% thresholds are too tight for 10-25 stock concentrated micro-cap portfolios (monthly vol ≈8-12%). Need n_stocks-aware threshold calibration.",
+        "todos": [
+          {
+            "id": "FX03",
+            "priority": "P0",
+            "file": "strategies.py",
+            "task": "Recalibrate stop_loss for S4-S11 based on their n_stocks and expected monthly volatility. Rule of thumb: stop_loss ≥ 3 × expected_monthly_vol. For n_stocks ≤ 10: stop_loss ~ -0.35; 11-20: ~ -0.30; 21-30: ~ -0.25. Actual calibration via engine.max_drawdown_no_stop (run each strategy once without stop_loss to measure natural drawdown distribution).",
+            "new_stop_loss": {
+              "S4":  -0.35,
+              "S5":  -0.35,
+              "S6":  -0.30,
+              "S7":  -0.30,
+              "S8":  -0.30,
+              "S9":  -0.30,
+              "S10": -0.30,
+              "S11": -0.30
+            },
+            "rationale": "Concentrated micro-cap → wider stop; diversified (close to S3's 30 stocks) → can tighten. S3 (30 stocks, no stop) had -43% max drawdown as reference."
+          },
+          {
+            "id": "FX04",
+            "priority": "P1",
+            "file": "engine.py",
+            "task": "Add `trailing_stop: Optional[float]` parameter to engine.run(). Instead of fixed stop against initial capital, trail against peak equity: `equity / peak_equity <= (1 - trailing_stop)`. This allows strategies to lock in gains while protecting against drawdowns.",
+            "example": "trailing_stop=0.25 means 'exit if equity drops 25% below its all-time high'. A strategy that doubles first can then protect that gain.",
+            "estimated_lines_changed": 20,
+            "test": "test_limits.py: add test_trailing_stop — equity rises 50% then drops 25%; verify stop triggers at correct level"
+          }
+        ]
+      },
+      {
+        "phase": "Phase 3: Strategy Implementation Improvements (P1)",
+        "description": "S7-S11 use ranking_fn for multi-factor composites. Migrate them to the engine's native composite_factors mode for cleaner code and better testability. Also add new academic templates as separate strategies.",
+        "todos": [
+          {
+            "id": "FX05",
+            "priority": "P1",
+            "file": "strategies.py",
+            "task": "Refactor S7-S11 to use `composite_factors` instead of `ranking_fn` where applicable. Ranking functions that use conditional logic (drift state, sentiment zones) still need ranking_fn. But pure multi-factor blends (S8, S10, S11) can use composite_factors+z-score. This makes the strategies more transparent and testable.",
+            "strategies_to_refactor": {
+              "S7": "KEEP ranking_fn — drift-regime conditional logic is non-factor-based",
+              "S8": "CONVERT to composite_factors — profitability × low-vol is a simple 2-factor z-score composite",
+              "S9": "KEEP ranking_fn — conditional momentum/reversal zone switching",
+              "S10": "CONVERT to composite_factors — 3-factor equal-weight z-score",
+              "S11": "KEEP ranking_fn — dynamic IC-weighted weighting needs state tracking"
+            },
+            "estimated_lines_changed": 40
+          },
+          {
+            "id": "FX06",
+            "priority": "P1",
+            "file": "strategies_v2.py (NEW strategies)",
+            "task": "Add 4 new academic-template strategies to strategies_v2.py that invoke the new templates computed in `add_template_signals` (regime_momentum, sentiment_conditional, ensemble, multi_timeframe). Each strategy uses the template signal via ranking_factor. Also add `compute_templates` pipeline step that pre-computes template signals before engine run.",
+            "new_strategies": [
+              {"id": "S_REGIME", "name": "Regime-Switching Momentum (arXiv 2410.14841)", "template": "regime_momentum", "n_stocks": 25, "ascending": false},
+              {"id": "S_SENTIMENT", "name": "Sentiment-Conditional (Springer 40854-025-00774)", "template": "sentiment_conditional", "n_stocks": 20, "ascending": false},
+              {"id": "S_ENSEMBLE", "name": "Multi-Factor Ensemble (arXiv 2507.07107)", "template": "ensemble", "n_stocks": 25, "ascending": false},
+              {"id": "S_MTF", "name": "Multi-Timeframe Momentum (arXiv 2410.14841)", "template": "multi_timeframe", "n_stocks": 25, "ascending": false}
+            ],
+            "estimated_lines_changed": 100
+          }
+        ]
+      },
+      {
+        "phase": "Phase 4: Validation & Regression (P1-P2)",
+        "description": "After all fixes, run a comprehensive backtest and verify that (a) previously-working S1-S3 are unchanged, (b) S4-S11 now produce meaningful results, (c) new templates contribute unique alpha.",
+        "todos": [
+          {
+            "id": "FX07",
+            "priority": "P1",
+            "task": "Run full regression backtest: all 11 original + 4 v2 + 4 new template strategies. Compare pre-fix vs post-fix results. Verify S1-S3 are unchanged. Verify S4-S11 now have >12 months of returns and meaningful alpha.",
+            "validation_criteria": {
+              "S1-S3": "annual_return and sharpe unchanged ± 5%",
+              "S4-S11": "months_run >= 12 (previously 1-2)",
+              "S4-S11": "terminal_value != 0.61 or 0.70 (previously identical across all failed strategies)"
+            }
+          },
+          {
+            "id": "FX08",
+            "priority": "P2",
+            "file": "engine.py",
+            "task": "Add `robust_start_check` in engine.run(): if the first 3 months' equity curve is declining and would trigger stop_loss before month 3, emit a warning. This catches the 'backtest starts during a bear market' edge case without changing results.",
+            "estimated_lines_changed": 10
+          }
+        ]
+      }
+    ]
+  },
+
+  "dependencies": {
+    "FX01 → FX02": "stop_triggered fields depend on daily stop check",
+    "FX01 → FX03": "recalibrate stop_loss AFTER daily stop mechanism is in place",
+    "FX03 → FX07": "validate after recalibration",
+    "FX05 → FX07": "validate after refactor",
+    "FX06 → FX07": "new template strategies included in final validation",
+    "FX04": "independent — can be done in parallel with FX05/FX06"
+  },
+
+  "risk_assessment": {
+    "P0_no_regression": "FX01 (daily stop loss) has zero impact on S1-S3 because S1 has stop_loss=-0.30 (wide enough to never trigger), S2 has -0.15 (barely survived), S3 has None. Changes are purely additive.",
+    "P1_data_quality": "All required columns (mcap, pb, pe, mom20d, mom60d, turnover, vol20d, ivol, max_ret) confirmed present in factor panel with >99% coverage except pe (72%). No column addition needed.",
+    "P2_edge_case": "The 2018-11 start date is historically harsh. FX08 adds a warning but does not change results."
+  },
+
+  "expected_outcome": {
+    "S1-S3": "Unchanged (functional strategies remain functional)",
+    "S4-S11": "All 8 strategies produce meaningful multi-year results with proper stop_loss behavior",
+    "new_templates": "4 academic strategies (regime_momentum, sentiment_conditional, ensemble, multi_timeframe) added and producing results",
+    "total_strategies": "15 original + 4 new = 19 strategies, all functional",
+    "engine_improvement": "stop_loss is day-accurate instead of month-delayed; trailing stop option available"
+  }
+}

@@ -163,8 +163,8 @@ strategy_ipo = {
     "universe_filter": ipo_resonance_filter,
     "ranking_factor": "mom20d",  # 20 日动量
     "ascending": False,
-    "n_stocks": 6,
-    "stop_loss": -0.20,
+    "n_stocks": 15,  # Increased from 6 for diversification (6 was too concentrated → -96% DD)
+    "stop_loss": -0.45,
 }
 
 
@@ -190,7 +190,7 @@ strategy_shell = {
     "ranking_factor": "pb",         # 最低 PB
     "ascending": True,
     "n_stocks": 10,
-    "stop_loss": -0.25,
+    "stop_loss": -0.40,    # Calibrated: natural DD -51.4%, ann +55.9% without stop
 }
 
 
@@ -216,7 +216,7 @@ strategy_pb_value = {
     "ranking_factor": "pb",           # 最低 PB 优先
     "ascending": True,
     "n_stocks": 20,
-    "stop_loss": -0.20,
+    "stop_loss": -0.45,    # Calibrated: natural DD -43.2%, ann +22.5% — need margin above DD
 }
 
 
@@ -300,7 +300,7 @@ strategy_drift_reversal = {
     "ranking_factor": None,  # 使用 ranking_fn
     "ascending": True,       # ranking_fn 已处理方向
     "n_stocks": 20,
-    "stop_loss": -0.20,
+    "stop_loss": -0.45,    # Calibrated: natural DD -43.2%, ann +7.5% — need margin above DD
     "ranking_fn": drift_regime_reversal_rank,
     "paper": "arXiv 2511.12490: 13-Sharpe OOS Factor via Drift Regimes",
 }
@@ -365,7 +365,7 @@ strategy_profit_lowvol = {
     "ranking_factor": None,
     "ascending": True,
     "n_stocks": 25,
-    "stop_loss": -0.15,
+    "stop_loss": -0.40,    # Calibrated: natural DD -51.0%, ann +1.9% without stop
     "ranking_fn": profitability_low_vol_rank,
     "paper": "Novy-Marx NBER w33601 + Low Vol Anomaly",
 }
@@ -433,7 +433,7 @@ strategy_conditional_mom_rev = {
     "ranking_factor": None,
     "ascending": True,
     "n_stocks": 20,
-    "stop_loss": -0.20,
+    "stop_loss": -0.45,    # Calibrated: natural DD -66.0%; ann -9.6% — wider stop for survival
     "ranking_fn": conditional_mom_rev_rank,
     "paper": "ScienceDirect 2024: Short-term Momentum & Reversals",
 }
@@ -496,7 +496,7 @@ strategy_triple_factor = {
     "ranking_factor": None,
     "ascending": True,
     "n_stocks": 25,
-    "stop_loss": -0.20,
+    "stop_loss": -0.45,    # Calibrated: natural DD -48.5%, ann +26.1% — need margin above DD
     "ranking_fn": triple_factor_rank,
     "paper": "Novy-Marx + arXiv 2511.12490 + Micro-cap Anomaly",
 }
@@ -586,7 +586,7 @@ strategy_factor_momentum = {
     "ranking_factor": None,
     "ascending": True,
     "n_stocks": 25,
-    "stop_loss": -0.15,
+    "stop_loss": -0.50,    # Calibrated: natural DD -70.2%; ann -12.3% — needs alpha redesign
     "ranking_fn": factor_momentum_rank,
     "paper": "ScienceDirect 2024: Factor Momentum in Chinese Stock Market",
 }

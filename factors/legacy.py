@@ -235,7 +235,8 @@ def compute_factors(price_data: pd.DataFrame,
 
     # --- 构建因子面板 (MultiIndex) ---
     factor_cols = ['name', 'mcap', 'pb', 'pe', 'mom20d', 'mom60d', 'turnover', 'vol20d',
-                   'ivol', 'max_ret', 'is_limit_up', 'is_limit_down']
+                   'ivol', 'max_ret', 'is_limit_up', 'is_limit_down',
+                   'close', 'open']  # 模板信号需要原始价格字段
     available_cols = [c for c in factor_cols if c in data.columns]
 
     factor_panel = data.set_index(['date', 'symbol'])[available_cols]

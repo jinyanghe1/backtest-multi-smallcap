@@ -93,22 +93,26 @@ LITERATURE_REVIEW = """
 """
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PART II: 三个新策略设计 (第二版, 基于第一轮回测校准)
+# PART II: 四个学术模板策略 (基于 factors/templates.py 预计算信号)
 # ══════════════════════════════════════════════════════════════════════════════
 #
-# 第一轮教训:
-# - 纯反转(买跌最多)在微盘失效 → 很多"输家"是真烂, 非均值回归
-# - 低波动作为二次过滤有效, 但单因子不够
-# - 正确方向: 基于已证明有效的策略3/5做增强, 而非引入不稳定的新因子
+# 设计哲学: 每个策略使用一个预计算的模板信号 (add_template_signals),
+# 由 engine 直接按 ranking_factor 排名。无需 ranking_fn。
+# 模板信号通过 run.py 中的 pre-computation 步骤注入 factor_panel。
 #
-# 三个新策略的设计哲学:
-#   A: 低波小市值 — 策略3 + 低波过滤 (质量增强版)
-#   B: Size+PB 复合 — 策略3+5 的融合 (双因子安全边际)
-#   C: 低波+缩量信号 — 筹码集中代理 (制度性 alpha)
+# 文献来源:
+#   - S_REGIME:   arxiv 2410.14841 (动态因子分配+状态切换)
+#   - S_SENTIMENT: springer 40854-025-00774 (A股 sentiment-conditional anomalies)
+#   - S_ENSEMBLE:  arxiv 2507.07107 (ML-enhanced multi-factor)
+#   - S_MTF:       arxiv 2410.14841 (multi-timeframe momentum fusion)
 
 from tools.backtest_mvp.strategies import (
     filter_micro_cap, filter_no_st, filter_low_pb, filter_liquid
 )
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 原有 4 个策略 (A-D): 低波小市值 / 多因子综合 / 低波低换手 / 5因子复合
+# ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 策略 A: 低波小市值 (Small-Cap Low Vol) — 稳健小盘
@@ -241,6 +245,82 @@ strategy_five_factor = {
     ],
 }
 
+# ──────────────────────────────────────────────────────────────────────────────
+# 策略 E-H: 学术模板策略 (基于 factors/templates.py 预计算信号)
+# ──────────────────────────────────────────────────────────────────────────────
+# 这些策略使用预计算的模板信号作为 ranking_factor。
+# 模板信号在引擎外部通过 add_template_signals 注入 factor_panel。
+# 每个策略的 "template" 字段告知 runner 需要预计算哪个信号。
+
+def template_micro_cap_filter(snapshot, dates, step):
+    """模板策略通用过滤: 微盘 + 非 ST + 有流动性"""
+    stocks = filter_micro_cap(snapshot, dates, step, max_mcap=30)
+    stocks = list(set(stocks) & set(filter_no_st(snapshot, dates, step)))
+    if len(stocks) == 0:
+        return []
+    sub = snapshot.loc[stocks]
+    if 'turnover' in sub.columns:
+        sub = sub[sub['turnover'] > 0.3]
+    return list(sub.index)
+
+# E: 状态切换动量 — Regime-Switching Momentum
+strategy_regime_momentum = {
+    "name": "策略E: 状态切换动量(regime_mom)",
+    "universe_filter": template_micro_cap_filter,
+    "template": "regime_momentum",
+    "ranking_factor": "regime_momentum",
+    "template_kwargs": {"price_field": "close", "vol_window": 20,
+                        "mom_window": 10, "rev_window": 5,
+                        "vol_threshold": 0.03},
+    "ascending": False,   # 高信号=好
+    "n_stocks": 25,
+    "stop_loss": -0.40,
+    "paper": "arXiv 2410.14841: Dynamic Factor Allocation with Regime Switching",
+}
+
+# F: 情绪条件切换 — Sentiment-Conditional Strategy
+strategy_sentiment_conditional = {
+    "name": "策略F: 情绪条件切换(sentiment)",
+    "universe_filter": template_micro_cap_filter,
+    "template": "sentiment_conditional",
+    "ranking_factor": "sentiment_conditional",
+    "template_kwargs": {"turnover_field": "turnover", "price_field": "close",
+                        "sentiment_window": 20, "mom_window": 10,
+                        "rev_window": 5, "sentiment_threshold": 0.5},
+    "ascending": False,
+    "n_stocks": 20,
+    "stop_loss": -0.40,
+    "paper": "Springer 40854-025-00774: A股 Sentiment-Conditional Anomalies",
+}
+
+# G: 多因子集成 — Multi-Factor Ensemble
+strategy_ensemble = {
+    "name": "策略G: 多因子集成(ensemble)",
+    "universe_filter": template_micro_cap_filter,
+    "template": "ensemble",
+    "ranking_factor": "ensemble",
+    "template_kwargs": {"window": 20},
+    "ascending": False,
+    "n_stocks": 25,
+    "stop_loss": -0.40,
+    "paper": "arXiv 2507.07107: ML-Enhanced Multi-Factor Cross-Sectional",
+}
+
+# H: 多时间框架动量 — Multi-Timeframe Momentum
+strategy_multi_timeframe = {
+    "name": "策略H: 多时间框架动量(mtf)",
+    "universe_filter": template_micro_cap_filter,
+    "template": "multi_timeframe",
+    "ranking_factor": "multi_timeframe",
+    "template_kwargs": {"price_field": "close",
+                        "windows": (5, 10, 20, 60),
+                        "weights": (0.4, 0.3, 0.2, 0.1)},  # 短窗口权重更高
+    "ascending": False,
+    "n_stocks": 25,
+    "stop_loss": -0.40,
+    "paper": "arXiv 2410.14841: Multi-Timeframe Momentum Fusion",
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PART III: 汇总
 # ══════════════════════════════════════════════════════════════════════════════
@@ -250,6 +330,13 @@ NEW_STRATEGIES = [
     strategy_size_lowvol_mom,
     strategy_contrarian,
     strategy_five_factor,
+]
+
+TEMPLATE_STRATEGIES = [
+    strategy_regime_momentum,
+    strategy_sentiment_conditional,
+    strategy_ensemble,
+    strategy_multi_timeframe,
 ]
 
 ALL_STRATEGIES_EXTENDED = None  # 将在 run_all 中动态拼接

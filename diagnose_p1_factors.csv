@@ -1,0 +1,6 @@
+﻿factor,ic_mean,ic_ir,ic_tstat,turnover,halflife,q_spread,sharpe,corr_size,valid
+A1_short_reversal,0.0039,0.0356,1.33,,4.0,-0.0,0.12,0.0,False
+A2_lottery_avoid,0.0145,0.152,5.73,,4.0,0.0003,0.53,0.0,False
+A3_shareholder_conc,-0.0087,-0.0622,-2.34,,4.0,0.0001,0.0,0.0,False
+A5_earnings_surprise,-0.0141,-0.0997,-3.7,,4.0,-0.0006,0.0,0.0,False
+A8_quality_value,0.0242,0.2573,9.77,,4.0,0.0002,0.89,-0.0,False

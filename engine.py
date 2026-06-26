@@ -43,6 +43,8 @@ class BacktestResult:
     max_drawdown_recovery_time: int = 0  # 最大回撤恢复天数 (谷底→创新高)
     rolling_sharpe: pd.Series = None      # 滚动夏普比率序列
     turnover_attribution: dict = None     # 换手率分解 {rebalance, price_drift, total}
+    stop_triggered: bool = False    # 是否触发了组合止损
+    stop_trigger_date: str = ""     # 止损触发日期 (YYYY-MM-DD)
 
 
 def compute_monthly_ic_heatmap(ic_series: pd.Series) -> pd.DataFrame:
@@ -249,6 +251,7 @@ class CrossSectionalEngine:
         ascending: bool = True,
         composite_factors: Optional[List[tuple]] = None,
         stop_loss: Optional[float] = None,
+        trailing_stop: Optional[float] = None,
         take_profit_stocks: bool = False,
         take_profit_threshold: float = 0.50,
         ranking_fn: Optional[Callable[[pd.DataFrame], pd.Series]] = None,
@@ -264,15 +267,16 @@ class CrossSectionalEngine:
             composite_factors: [(factor_name, ascending), ...] 多因子z-score复合排名,
                               例如 [('mcap', True), ('pb', True), ('max_ret', False)]
                               提供此参数时 ranking_factor/ascending 被忽略
-            stop_loss: 组合层面止损 (-0.20 表示跌破初始的 80% 清仓)
+            stop_loss: 组合层面止损 (-0.20 表示跌破初始资本的 80% 清仓)
+            trailing_stop: 移动止损 (0.25 表示从峰值回撤 25% 时清仓).
+                          与 stop_loss 独立: 两个条件任一触发即退出.
+                          优势: 策略先翻倍再跌时能保护已获利润.
             take_profit_stocks: 是否对个股启用止盈
             take_profit_threshold: 个股止盈阈值 (相对于买入价)
             ranking_fn: 复合排名函数 (factor_snapshot → pd.Series), 返回每只股票的综合评分
                         如果提供了 ranking_fn, 将忽略 composite_factors 和 ranking_factor
             factor_weights: {因子名: 权重} — 仅当 composite_factors 启用时生效
                             默认 None = 等权; 提供时用加权和替代等权和
-            ranking_fn: 复合排名函数 (factor_snapshot → pd.Series), 返回每只股票的综合评分
-                        如果提供了 ranking_fn, 将忽略 ranking_factor 和 ascending
 
         Returns:
             BacktestResult 对象
@@ -286,6 +290,9 @@ class CrossSectionalEngine:
         current_holdings = {}  # {stock: (buy_price, weight, buy_date)}
         equity_dates = []
         total_days = 0
+        _stop_triggered = False
+        _stop_date = None
+        _peak_equity = self.initial_capital  # trailing_stop 峰值追踪
 
         # 预提取因子面板以便快速查询
         factor_cols = list(self.factors.columns)
@@ -426,6 +433,24 @@ class CrossSectionalEngine:
                 equity_dates.append(ts)
                 total_days += 1
 
+                # --- 组合止损检查 (日频, 同日精度) ---
+                # 更新峰值
+                if trailing_stop and equity > _peak_equity:
+                    _peak_equity = equity
+
+                # 固定止损 (对初始资本)
+                if stop_loss and equity / self.initial_capital <= (1 + stop_loss):
+                    _stop_triggered = True
+                    _stop_date = ts
+                    break
+
+                # 移动止损 (对峰值回撤)
+                if trailing_stop and _peak_equity > 0 and \
+                   equity / _peak_equity <= (1 - trailing_stop):
+                    _stop_triggered = True
+                    _stop_date = ts
+                    break
+
             # 月度收益
             monthly_returns_log.append(equity / month_start_equity - 1)
 
@@ -452,12 +477,12 @@ class CrossSectionalEngine:
                     turnover_log.append(turnover)
 
             # --- 第 7 步: 检查组合止损 ---
-            if stop_loss and equity / self.initial_capital <= (1 + stop_loss):
-                # 清仓, 等权现金
+            if _stop_triggered:
                 break
 
         # --- 收尾 ---
-        equity *= (1 - self.commission)
+        if not _stop_triggered:
+            equity *= (1 - self.commission)
 
         # --- 构建权益曲线 (用 equity_dates 对 equity_curve) ---
         curve_data = list(zip(equity_dates, equity_curve[1:]))
@@ -549,7 +574,22 @@ class CrossSectionalEngine:
             max_drawdown_recovery_time=recovery_days,
             rolling_sharpe=rolling_sharpe_series,
             turnover_attribution=turnover_attr,
+            stop_triggered=_stop_triggered,
+            stop_trigger_date=str(_stop_date.date()) if _stop_date else "",
         )
+
+        # --- robust_start_check: 熊市启动警告 ---
+        if n_months < 3:
+            print(f"  ⚠️ [robust_start] 回测仅运行 {n_months} 个月, "
+                  f"不足以评估策略长期表现。可能是在熊市中提前止损。")
+        elif len(monthly_ret) >= 2:
+            # 检查前 3 个月是否持续下跌
+            early_rets = monthly_ret[:min(3, len(monthly_ret))]
+            if early_rets.mean() < -0.02:  # 月均亏损 > 2%
+                print(f"  ⚠️ [robust_start] 前 {len(early_rets)} 个月月均收益 "
+                      f"{early_rets.mean()*100:.1f}% (连续亏损), "
+                      f"回测起点可能处于熊市阶段。结果可能低估策略长期表现。")
+
         return result
 
     def _compute_ic_series(
