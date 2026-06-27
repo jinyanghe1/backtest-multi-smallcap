@@ -369,20 +369,21 @@ def vwap_deviation(panel: pd.DataFrame) -> pd.Series:
     Logic: vwap > close = selling pressure (institutional distribution).
     Expected IC: negative
     """
+    close = panel["close"]
+
     if "vwap" in panel.columns:
         vwap = panel["vwap"]
-        close = panel["close"]
-        return (vwap - close) / close.replace(0, np.nan)
-
-    # Estimate vwap from amount / volume
-    if "amount" in panel.columns and "volume" in panel.columns:
+    elif "amount" in panel.columns and not panel["amount"].isna().all():
         amount = panel["amount"]
         volume = panel["volume"]
-        vwap_est = amount / volume.replace(0, np.nan)
-        close = panel["close"]
-        return (vwap_est - close) / close.replace(0, np.nan)
+        vwap = amount / volume.replace(0, np.nan)
+    else:
+        # Fallback: use typical price (H+L+C)/3 as VWAP proxy
+        high = panel.get("high", close)
+        low = panel.get("low", close)
+        vwap = (high + low + close) / 3
 
-    return pd.Series(np.nan, index=panel.index)
+    return (vwap - close) / close.replace(0, np.nan)
 
 
 def volatility_ratio(panel: pd.DataFrame, short_window: int = 20, long_window: int = 60) -> pd.Series:
