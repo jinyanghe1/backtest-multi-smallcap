@@ -1,0 +1,713 @@
+{
+  "project": "backtest_mvp Factor Optimization Methods (20+ Techniques)",
+  "version": "v1.0",
+  "date": "2026-06-27",
+  "source_papers": [
+    "DeMiguel et al. (2025) - Not All Factors Crowd Equally",
+    "Barra Risk Model Handbook - MSCI",
+    "Menchero & Morozov (2011) - Decomposition of Risk and Return",
+    "Kakushadze & Yu (2017) - Statistical Risk Models",
+    "Fama & French (2015) - A Five-Factor Asset Pricing Model",
+    "Grinold & Kahn (1999) - Active Portfolio Management",
+    "Qian & Hua (2004) - Active Risk and Information Ratio",
+    "Sneddon (2019) - The Snake in the Box",
+    "Li et al. (2023) - Replicating and Digesting Anomalies in Chinese A-share",
+    "Asness et al. (2019) - Quality Minus Junk",
+    "Clarke et al. (2016) - Risk Parity, Maximum Diversification, and Minimum Variance",
+    "Ledoit & Wolf (2004) - A Well-Conditioned Estimator for Large-Dimensional Covariance Matrices",
+    "Meucci (2010) - Review of Statistical Arbitrage",
+    "Roncalli (2013) - Introduction to Risk Parity and Budgeting",
+    "Harvey et al. (2016) - ... and the Cross-Section of Expected Returns",
+    "Garcia-Feijoo et al. (2019) - Factor Investing and Asset Pricing Anomalies",
+    "Bender et al. (2018) - Factor Investing and Risk Premia",
+    "Blitz & van Vliet (2007) - The Volatility Effect",
+    "Novy-Marx (2014) - Understanding Defensive Equity",
+    "Asness (2016) - The Value and Momentum Effects"
+  ],
+  "optimization_methods": [
+    {
+      "id": "OPT001",
+      "name": "截面OLS中性化",
+      "category": "中性化",
+      "source_papers": ["Barra Risk Model Handbook", "Kakushadze & Yu (2017)"],
+      "current_status": "已实现",
+      "implementation": {
+        "module": "factors/neutralization.py",
+        "function": "neutralize_ols_residual",
+        "signature": "def neutralize_ols_residual(factor: pd.Series, controls: pd.DataFrame, min_obs: int = 10) -> pd.Series",
+        "algorithm": "逐date groupby -> np.linalg.lstsq(X, y, rcond=None) -> residuals = y - X @ beta",
+        "controls": ["size_log", "industry_dummy"],
+        "strength": 1.0
+      },
+      "parameters": {
+        "min_obs": {
+          "value": 10,
+          "range": [5, 30],
+          "tuning_method": "cross-validation IC最大化"
+        },
+        "strength": {
+          "value": 1.0,
+          "range": [0.0, 1.0],
+          "description": "1.0=完全中性, 0.0=不中性, 0.5=混合"
+        }
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.03",
+        "sharpe_lift": "+0.1 to +0.3",
+        "size_corr_reduction": "0.6 -> 0.03"
+      },
+      "test_logic": [
+        "test_neutralize_ols_basic: 构造 y=2x+noise, 回归后残差与x |corr| < 0.05",
+        "test_neutralize_ols_industry: 3行业dummy, 回归后各行业均值≈0",
+        "test_neutralize_ols_preserve_rank: Spearman rank corr > 0.7"
+      ],
+      "priority": "P0",
+      "status": "completed"
+    },
+    {
+      "id": "OPT002",
+      "name": "Winsorize去极值",
+      "category": "预处理",
+      "source_papers": ["Grinold & Kahn (1999)", "ziyan916/multi-factor-quant"],
+      "current_status": "已实现",
+      "implementation": {
+        "module": "factors/preprocessing.py",
+        "function": "winsorize_cross_sectional",
+        "signature": "def winsorize_cross_sectional(series: pd.Series, method: str = 'mad', n_mad: float = 5.0, level: str = 'date') -> pd.Series",
+        "methods": ["mad", "percentile", "std"]
+      },
+      "parameters": {
+        "method": {
+          "value": "mad",
+          "options": ["mad", "percentile", "std"],
+          "recommendation": "mad(最鲁棒)"
+        },
+        "n_mad": {
+          "value": 5.0,
+          "range": [3.0, 10.0],
+          "tuning_method": "覆盖99.5%数据"
+        }
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.005 to +0.01",
+        "sharpe_lift": "+0.05 to +0.1",
+        "outlier_reduction": "消除极端值对回归的扭曲"
+      },
+      "test_logic": [
+        "test_winsorize_mad: 含outlier(100)数据, 缩尾后max ≤ median + 5*MAD",
+        "test_winsorize_preserves_order: 缩尾前后rank correlation = 1.0"
+      ],
+      "priority": "P0",
+      "status": "completed"
+    },
+    {
+      "id": "OPT003",
+      "name": "Z-score标准化",
+      "category": "预处理",
+      "source_papers": ["Grinold & Kahn (1999)", "Barra Risk Model Handbook"],
+      "current_status": "已实现",
+      "implementation": {
+        "module": "factors/preprocessing.py",
+        "function": "zscore_cross_sectional",
+        "signature": "def zscore_cross_sectional(series: pd.Series, level: str = 'date') -> pd.Series",
+        "algorithm": "逐date groupby -> (x - mean) / std"
+      },
+      "parameters": {
+        "level": {
+          "value": "date",
+          "description": "groupby level名"
+        }
+      },
+      "expected_effect": {
+        "ic_improvement": "中性(不改变rank)",
+        "sharpe_lift": "中性",
+        "comparability": "不同量纲因子可比"
+      },
+      "test_logic": [
+        "test_zscore_cross_sectional: 每date分组后, mean≈0, std≈1"
+      ],
+      "priority": "P0",
+      "status": "completed"
+    },
+    {
+      "id": "OPT004",
+      "name": "预处理管线(完整)",
+      "category": "管线",
+      "source_papers": ["ziyan916/multi-factor-quant", "PuYuan-scott/quant-multifactor"],
+      "current_status": "已实现",
+      "implementation": {
+        "module": "factors/preprocessing.py",
+        "function": "preprocess_pipeline",
+        "signature": "def preprocess_pipeline(factor: pd.Series, controls: pd.DataFrame = None, config: dict = None) -> pd.Series",
+        "pipeline_steps": ["winsorize", "zscore", "neutralize", "re-zscore"]
+      },
+      "parameters": {
+        "config": {
+          "winsorize": {"method": "mad", "n_mad": 5.0},
+          "standardize": {"method": "zscore"},
+          "neutralize": {"strength": 1.0, "controls": ["size", "industry"]}
+        }
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.15 to +0.30"
+      },
+      "test_logic": [
+        "test_preprocess_pipeline_full: 输入raw factor -> 输出中性化zscore, 验证每步属性"
+      ],
+      "priority": "P0",
+      "status": "completed"
+    },
+    {
+      "id": "OPT005",
+      "name": "IC-IR加权组合",
+      "category": "组合权重",
+      "source_papers": ["Qian & Hua (2004)", "Grinold & Kahn (1999)"],
+      "current_status": "部分实现(IC加权在p1_factor_mining.py)",
+      "implementation": {
+        "module": "factors/combination.py (待创建)",
+        "function": "combine_factors_ic_weighted",
+        "signature": "def combine_factors_ic_weighted(factors: Dict[str, pd.Series], ic_stats: Dict[str, FactorStats], min_ic_ir: float = 0.3) -> pd.Series",
+        "algorithm": "1. filter(ic_ir > min_ic_ir) -> 2. weight = max(|ic_ir|, 0.01) -> 3. normalize -> 4. weighted_sum"
+      },
+      "parameters": {
+        "min_ic_ir": {
+          "value": 0.3,
+          "range": [0.1, 0.5],
+          "description": "最低IC-IR门槛，低于此值的因子权重=0"
+        },
+        "lookback": {
+          "value": 60,
+          "range": [20, 252],
+          "description": "IC计算回望窗口(交易日)"
+        }
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.2 to +0.4",
+        "stability": "IC波动降低20-40%"
+      },
+      "test_logic": [
+        "test_ic_weighted_sum: 两个IC=0.05的因子组合后IC > 单个因子IC",
+        "test_flip_negative: ic_mean<0的因子翻转后IC>0",
+        "test_min_ic_ir_filter: ic_ir<0.3的因子权重=0"
+      ],
+      "priority": "P0",
+      "status": "pending",
+      "estimated_effort": "2h"
+    },
+    {
+      "id": "OPT006",
+      "name": "去相关贪心筛选",
+      "category": "因子选择",
+      "source_papers": ["Clarke et al. (2016)", "Sneddon (2019)"],
+      "current_status": "未实现",
+      "implementation": {
+        "module": "factors/combination.py (待创建)",
+        "function": "decorrelate_selection",
+        "signature": "def decorrelate_selection(factors: Dict[str, pd.Series], candidates: List[str], max_corr: float = 0.6) -> List[str]",
+        "algorithm": "贪心: 选IC-IR最高的 -> 逐个加入, 要求与已选因子|corr|<max_corr"
+      },
+      "parameters": {
+        "max_corr": {
+          "value": 0.6,
+          "range": [0.3, 0.8],
+          "description": "最大允许相关性"
+        }
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.02",
+        "sharpe_lift": "+0.1 to +0.2",
+        "diversification": "避免多重共线性"
+      },
+      "test_logic": [
+        "test_decorrelate_basic: 3个因子corr=[0.9,0.9,0.3], 选2个(第一个和第三个)",
+        "test_decorrelate_all_high_corr: 全部高度相关, 只返回1个"
+      ],
+      "priority": "P0",
+      "status": "pending",
+      "estimated_effort": "1.5h"
+    },
+    {
+      "id": "OPT007",
+      "name": "Alpha衰减检测",
+      "category": "动态管理",
+      "source_papers": ["DeMiguel et al. (2025)", "Harvey et al. (2016)"],
+      "current_status": "未实现",
+      "implementation": {
+        "module": "factors/decay_monitor.py (待创建)",
+        "function": "detect_alpha_decay",
+        "signature": "def detect_alpha_decay(factor_returns: pd.Series, halflife_window: int = 60) -> dict",
+        "algorithm": "Hyperbolic decay: alpha(t) = K / (1 + lambda*t)"
+      },
+      "parameters": {
+        "halflife_window": {
+          "value": 60,
+          "range": [20, 252],
+          "description": "衰减检测窗口"
+        },
+        "decay_threshold": {
+          "value": 0.5,
+          "description": "IC降至50%时触发警告"
+        }
+      },
+      "expected_effect": {
+        "early_warning": "提前1-2个月发现因子失效",
+        "sharpe_protection": "避免持有失效因子, 减少夏普损失0.2-0.5"
+      },
+      "test_logic": [
+        "test_decay_detection: 构造IC从0.05衰减到0.01的序列, 检测点在IC=0.025时触发",
+        "test_false_positive: 随机IC序列(IC~0.01)不应触发警告"
+      ],
+      "priority": "P1",
+      "status": "pending",
+      "estimated_effort": "2h"
+    },
+    {
+      "id": "OPT008",
+      "name": "因子拥挤度检测",
+      "category": "风险管理",
+      "source_papers": ["DeMiguel et al. (2025)", "Stambaugh et al. (2012)"],
+      "current_status": "未实现",
+      "implementation": {
+        "module": "factors/crowding_monitor.py (待创建)",
+        "function": "detect_factor_crowding",
+        "signature": "def detect_factor_crowding(factor: pd.Series, market_data: pd.DataFrame, lookback: int = 60) -> float",
+        "algorithm": "1. 计算因子暴露的横截面集中度 -> 2. 与历史均值比较 -> 3. 输出拥挤度评分"
+      },
+      "parameters": {
+        "lookback": {
+          "value": 60,
+          "range": [20, 252]
+        },
+        "crowding_threshold": {
+          "value": 2.0,
+          "description": "拥挤度>2σ时触发警告"
+        }
+      },
+      "expected_effect": {
+        "crash_avoidance": "拥挤因子未来回撤预测R²=0.65",
+        "sharpe_protection": "避免拥挤导致的-0.5到-1.0夏普损失"
+      },
+      "test_logic": [
+        "test_crowding_predicts_crash: 高拥挤度后1个月回撤 > 低拥挤度",
+        "test_crowding_vs_mean: 拥挤度 > 历史均值+2σ时触发"
+      ],
+      "priority": "P1",
+      "status": "pending",
+      "estimated_effort": "2.5h"
+    },
+    {
+      "id": "OPT009",
+      "name": "Barra风格风险模型",
+      "category": "风险模型",
+      "source_papers": ["Barra Risk Model Handbook", "Menchero & Morozov (2011)"],
+      "current_status": "未实现",
+      "implementation": {
+        "module": "risk/barra_model.py (待创建)",
+        "class": "BarraRiskModel",
+        "methods": {
+          "build_factor_exposure": "def build_factor_exposure(self, returns: pd.DataFrame, factors: pd.DataFrame) -> pd.DataFrame",
+          "estimate_covariance": "def estimate_covariance(self, factor_returns: pd.DataFrame) -> pd.DataFrame",
+          "predict_risk": "def predict_risk(self, weights: pd.Series, factor_cov: pd.DataFrame) -> float"
+        }
+      },
+      "parameters": {
+        "style_factors": ["size", "value", "momentum", "quality", "volatility", "liquidity"],
+        "industry_factors": ["industry_dummy_1", "...", "industry_dummy_n"],
+        "estimation_window": {
+          "value": 252,
+          "description": "协方差估计窗口(日)"
+        }
+      },
+      "expected_effect": {
+        "risk_attribution": "精确分解组合风险来源",
+        "unintended_exposure": "识别 unintended size/value 暴露"
+      },
+      "test_logic": [
+        "test_factor_exposure_sum: 所有因子暴露的平方和 ≈ 1",
+        "test_risk_prediction: 预测风险 vs 实际风险 |误差| < 20%"
+      ],
+      "priority": "P2",
+      "status": "pending",
+      "estimated_effort": "4h"
+    },
+    {
+      "id": "OPT010",
+      "name": "Ledoit-Wolf协方差收缩",
+      "category": "估计",
+      "source_papers": ["Ledoit & Wolf (2004)", "Meucci (2010)"],
+      "current_status": "未实现",
+      "implementation": {
+        "module": "risk/covariance.py (待创建)",
+        "function": "ledoit_wolf_shrinkage",
+        "signature": "def ledoit_wolf_shrinkage(returns: pd.DataFrame, shrinkage_target: str = 'constant_correlation') -> pd.DataFrame",
+        "algorithm": "样本协方差 + shrinkage_target -> 最优收缩系数 -> 收缩后协方差"
+      },
+      "parameters": {
+        "shrinkage_target": {
+          "value": "constant_correlation",
+          "options": ["constant_correlation", "identity", "single_factor"]
+        }
+      },
+      "expected_effect": {
+        "estimation_error": "协方差矩阵估计误差降低30-50%",
+        "out_of_sample": "样本外夏普提升0.1-0.2"
+      },
+      "test_logic": [
+        "test_positive_definite: 输出矩阵正定",
+        "test_shrinkage_amount: 收缩系数在[0,1]之间"
+      ],
+      "priority": "P2",
+      "status": "pending",
+      "estimated_effort": "2h"
+    },
+    {
+      "id": "OPT011",
+      "name": "风险平价组合",
+      "category": "组合优化",
+      "source_papers": ["Roncalli (2013)", "Clarke et al. (2016)"],
+      "current_status": "未实现",
+      "implementation": {
+        "module": "portfolio/risk_parity.py (待创建)",
+        "function": "risk_parity_weights",
+        "signature": "def risk_parity_weights(cov_matrix: pd.DataFrame, target_risk: float = None) -> pd.Series",
+        "algorithm": "迭代求解: 每个因子对组合风险的贡献相等"
+      },
+      "parameters": {
+        "target_risk": {
+          "value": null,
+          "description": "目标波动率(年化), None=不约束"
+        }
+      },
+      "expected_effect": {
+        "diversification": "各因子风险贡献均衡",
+        "sharpe_lift": "+0.1 to +0.2"
+      },
+      "test_logic": [
+        "test_equal_risk_contribution: 各因子风险贡献差异 < 10%"
+      ],
+      "priority": "P2",
+      "status": "pending",
+      "estimated_effort": "2h"
+    },
+    {
+      "id": "OPT012",
+      "name": "最大分散化组合",
+      "category": "组合优化",
+      "source_papers": ["Clarke et al. (2016)", "Choueifaty & Coignard (2008)"],
+      "current_status": "未实现",
+      "implementation": {
+        "module": "portfolio/max_diversification.py (待创建)",
+        "function": "max_diversification_weights",
+        "signature": "def max_diversification_weights(cov_matrix: pd.DataFrame) -> pd.Series",
+        "algorithm": "最大化分散化比率: 组合加权平均波动率 / 组合波动率"
+      },
+      "expected_effect": {
+        "diversification_ratio": "DR > 1.5 (充分分散)",
+        "sharpe_lift": "+0.1 to +0.2"
+      },
+      "test_logic": [
+        "test_diversification_ratio: DR > 1.5",
+        "test_positive_weights: 所有权重 > 0"
+      ],
+      "priority": "P3",
+      "status": "pending",
+      "estimated_effort": "2h"
+    },
+    {
+      "id": "OPT013",
+      "name": "最小方差组合",
+      "category": "组合优化",
+      "source_papers": ["Clarke et al. (2016)", "Grinold & Kahn (1999)"],
+      "current_status": "未实现",
+      "implementation": {
+        "module": "portfolio/min_variance.py (待创建)",
+        "function": "min_variance_weights",
+        "signature": "def min_variance_weights(cov_matrix: pd.DataFrame, allow_short: bool = False) -> pd.Series",
+        "algorithm": "二次规划: min w'Σw s.t. sum(w)=1, w>=0"
+      },
+      "parameters": {
+        "allow_short": {
+          "value": false,
+          "description": "是否允许做空"
+        }
+      },
+      "expected_effect": {
+        "volatility_reduction": "组合波动率降低20-30%",
+        "sharpe_lift": "+0.1 to +0.2"
+      },
+      "test_logic": [
+        "test_sum_to_one: sum(weights) = 1",
+        "test_non_negative: all(weights >= 0) if not allow_short"
+      ],
+      "priority": "P3",
+      "status": "pending",
+      "estimated_effort": "1.5h"
+    },
+    {
+      "id": "OPT014",
+      "name": "动量调整权重",
+      "category": "动态权重",
+      "source_papers": ["Asness (1997)", "Moskowitz & Grinblatt (1999)"],
+      "current_status": "未实现",
+      "implementation": {
+        "module": "portfolio/dynamic_weights.py (待创建)",
+        "function": "momentum_adjusted_weights",
+        "signature": "def momentum_adjusted_weights(base_weights: pd.Series, factor_momentum: pd.Series, lookback: int = 60) -> pd.Series",
+        "algorithm": "1. 计算因子动量(过去60日IC) -> 2. 动量强的因子增加权重 -> 3. 动量弱的因子降低权重"
+      },
+      "parameters": {
+        "lookback": {
+          "value": 60,
+          "range": [20, 252]
+        },
+        "momentum_boost": {
+          "value": 0.5,
+          "range": [0.0, 1.0],
+          "description": "动量增强系数"
+        }
+      },
+      "expected_effect": {
+        "adaptive_alpha": "自动增配近期有效的因子",
+        "sharpe_lift": "+0.1 to +0.3"
+      },
+      "test_logic": [
+        "test_momentum_boost: 动量强的因子权重 > 基础权重",
+        "test_momentum_decay: 动量因子IC衰减后权重自动降低"
+      ],
+      "priority": "P1",
+      "status": "pending",
+      "estimated_effort": "2h"
+    },
+    {
+      "id": "OPT015",
+      "name": "波动率目标调整",
+      "category": "风险管理",
+      "source_papers": ["Blitz & van Vliet (2007)", "Novy-Marx (2014)"],
+      "current_status": "部分实现(UD1风险护栏)",
+      "implementation": {
+        "module": "engine.py (扩展)",
+        "function": "volatility_target_positioning",
+        "signature": "def volatility_target_positioning(target_vol: float = 0.15, current_vol: float = None) -> float",
+        "algorithm": "1. 计算组合历史波动率 -> 2. 如果current_vol > target_vol, 减仓 -> 3. 如果current_vol < target_vol, 加仓"
+      },
+      "parameters": {
+        "target_vol": {
+          "value": 0.15,
+          "range": [0.05, 0.30],
+          "description": "目标年化波动率"
+        }
+      },
+      "expected_effect": {
+        "volatility_control": "组合波动率稳定在目标附近",
+        "drawdown_reduction": "最大回撤降低10-20%"
+      },
+      "test_logic": [
+        "test_vol_targeting: 组合波动率与目标差异 < 2%"
+      ],
+      "priority": "P1",
+      "status": "partial",
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "OPT016",
+      "name": "因子正交化(Gram-Schmidt)",
+      "category": "中性化",
+      "source_papers": ["Kakushadze & Yu (2017)", "Menchero & Morozov (2011)"],
+      "current_status": "未实现",
+      "implementation": {
+        "module": "factors/orthogonalization.py (待创建)",
+        "function": "gram_schmidt_orthogonalize",
+        "signature": "def gram_schmidt_orthogonalize(factors: Dict[str, pd.Series], ordered_factors: List[str]) -> Dict[str, pd.Series]",
+        "algorithm": "按顺序对每个因子，对之前所有因子回归取残差"
+      },
+      "parameters": {
+        "ordered_factors": {
+          "description": "因子处理顺序(先处理重要因子)"
+        }
+      },
+      "expected_effect": {
+        "zero_correlation": "正交化后因子两两相关系数=0",
+        "ic_purity": "每个因子的IC更纯净"
+      },
+      "test_logic": [
+        "test_zero_correlation: 正交化后所有因子对corr=0",
+        "test_ic_preservation: 正交化后IC保持80%以上"
+      ],
+      "priority": "P2",
+      "status": "pending",
+      "estimated_effort": "2h"
+    },
+    {
+      "id": "OPT017",
+      "name": "因子半衰期估计",
+      "category": "动态管理",
+      "source_papers": ["DeMiguel et al. (2025)", "Harvey et al. (2016)"],
+      "current_status": "未实现",
+      "implementation": {
+        "module": "factors/decay_monitor.py (待创建)",
+        "function": "estimate_halflife",
+        "signature": "def estimate_halflife(factor_ic_series: pd.Series, method: str = 'exponential') -> float",
+        "algorithm": "拟合IC衰减曲线: IC(t) = IC0 * exp(-lambda*t) -> 半衰期 = ln(2)/lambda"
+      },
+      "parameters": {
+        "method": {
+          "value": "exponential",
+          "options": ["exponential", "hyperbolic", "linear"]
+        }
+      },
+      "expected_effect": {
+        "rebalancing_frequency": "根据半衰期优化调仓频率",
+        "cost_reduction": "调仓成本降低10-20%"
+      },
+      "test_logic": [
+        "test_halflife_positive: 半衰期 > 0",
+        "test_halflife_consistency: 同一因子多次估计差异 < 20%"
+      ],
+      "priority": "P2",
+      "status": "pending",
+      "estimated_effort": "1.5h"
+    },
+    {
+      "id": "OPT018",
+      "name": "机器学习因子选择",
+      "category": "因子选择",
+      "source_papers": ["Shin et al. (2024)", "Zhang et al. (2025)"],
+      "current_status": "未实现",
+      "implementation": {
+        "module": "factors/ml_selection.py (待创建)",
+        "function": "ml_factor_selection",
+        "signature": "def ml_factor_selection(factors: pd.DataFrame, returns: pd.Series, method: str = 'xgboost') -> List[str]",
+        "algorithm": "1. XGBoost/LightGBM训练 -> 2. SHAP值解释 -> 3. 选择重要性top-N因子"
+      },
+      "parameters": {
+        "method": {
+          "value": "xgboost",
+          "options": ["xgboost", "lightgbm", "random_forest", "elastic_net"]
+        },
+        "n_factors": {
+          "value": 10,
+          "range": [5, 30],
+          "description": "选择的因子数量"
+        }
+      },
+      "expected_effect": {
+        "nonlinear_capture": "捕捉非线性因子交互",
+        "sharpe_lift": "+0.2 to +0.5"
+      },
+      "test_logic": [
+        "test_outperformance: ML选择组合夏普 > 等权组合",
+        "test_stability: 选择结果跨期稳定性 > 70%"
+      ],
+      "priority": "P2",
+      "status": "pending",
+      "estimated_effort": "3h"
+    },
+    {
+      "id": "OPT019",
+      "name": "Bayesian因子更新",
+      "category": "动态管理",
+      "source_papers": ["Meucci (2010)", "Grinold & Kahn (1999)"],
+      "current_status": "未实现",
+      "implementation": {
+        "module": "factors/bayesian_update.py (待创建)",
+        "function": "bayesian_factor_update",
+        "signature": "def bayesian_factor_update(prior_ic: float, new_ic: float, prior_variance: float, observation_variance: float) -> tuple",
+        "algorithm": "Kalman Filter: 先验IC + 新观测 -> 后验IC (加权平均, 权重由方差决定)"
+      },
+      "parameters": {
+        "prior_variance": {
+          "value": 0.01,
+          "description": "先验方差"
+        },
+        "observation_variance": {
+          "value": 0.05,
+          "description": "观测方差"
+        }
+      },
+      "expected_effect": {
+        "smooth_weights": "权重变化更平滑, 降低换手率10-20%",
+        "noise_reduction": "过滤短期噪声, IC稳定性提升"
+      },
+      "test_logic": [
+        "test_shrinkage: 后验IC在先验和新观测之间",
+        "test_convergence: 多次观测后后验方差 < 先验方差"
+      ],
+      "priority": "P3",
+      "status": "pending",
+      "estimated_effort": "2.5h"
+    },
+    {
+      "id": "OPT020",
+      "name": " walk-forward验证",
+      "category": "验证",
+      "source_papers": ["Harvey et al. (2016)", "Aronson (2006)"],
+      "current_status": "部分实现(ROADMAP_P1.json中T10)",
+      "implementation": {
+        "module": "validation/walk_forward.py (待创建)",
+        "function": "walk_forward_validation",
+        "signature": "def walk_forward_validation(factor: pd.Series, returns: pd.Series, train_window: int, test_window: int, step: int) -> pd.DataFrame",
+        "algorithm": "滚动窗口: 训练期 -> 测试期 -> 前进步长 -> 重复"
+      },
+      "parameters": {
+        "train_window": {
+          "value": 252,
+          "description": "训练窗口(日)"
+        },
+        "test_window": {
+          "value": 63,
+          "description": "测试窗口(日)"
+        },
+        "step": {
+          "value": 63,
+          "description": "滚动步长(日)"
+        }
+      },
+      "expected_effect": {
+        "overfitting_detection": "区分样本内和样本外表现",
+        "robustness": "确保因子在不同时间段有效"
+      },
+      "test_logic": [
+        "test_in_sample_vs_out: 样本外IC < 样本内IC(正常)",
+        "test_consistency: 各窗口IC符号一致"
+      ],
+      "priority": "P1",
+      "status": "partial",
+      "estimated_effort": "2h"
+    }
+  ],
+  "implementation_roadmap": {
+    "phase_1_immediate": {
+      "name": "立即实施(已有基础)",
+      "methods": ["OPT001", "OPT002", "OPT003", "OPT004", "OPT015"],
+      "duration": "1-2天",
+      "expected_sharpe_lift": "+0.3 to +0.6"
+    },
+    "phase_2_short_term": {
+      "name": "短期实施(1-2周)",
+      "methods": ["OPT005", "OPT006", "OPT014", "OPT020"],
+      "duration": "1-2周",
+      "expected_sharpe_lift": "+0.3 to +0.5"
+    },
+    "phase_3_medium_term": {
+      "name": "中期实施(2-4周)",
+      "methods": ["OPT007", "OPT008", "OPT009", "OPT010", "OPT011", "OPT016", "OPT017"],
+      "duration": "2-4周",
+      "expected_sharpe_lift": "+0.2 to +0.4"
+    },
+    "phase_4_long_term": {
+      "name": "长期实施(1-2月)",
+      "methods": ["OPT012", "OPT013", "OPT018", "OPT019"],
+      "duration": "1-2月",
+      "expected_sharpe_lift": "+0.1 to +0.3"
+    }
+  },
+  "expected_total_improvement": {
+    "baseline_sharpe": 0.68,
+    "after_phase_1": "1.0 - 1.3",
+    "after_phase_2": "1.3 - 1.8",
+    "after_phase_3": "1.5 - 2.2",
+    "after_phase_4": "1.6 - 2.5"
+  }
+}

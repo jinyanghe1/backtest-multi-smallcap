@@ -1,0 +1,1211 @@
+{
+  "project": "backtest_mvp Factor Library (30+ Alpha Factors)",
+  "version": "v1.0",
+  "date": "2026-06-27",
+  "source_papers": [
+    "Kakushadze (2016) - 101 Formulaic Alphas",
+    "Li et al. (2023) - Replicating and Digesting Anomalies in Chinese A-share Market",
+    "Shin et al. (2024) - Synergistic Formulaic Alpha Generation via RL",
+    "Bali et al. (2011) - Maxing out: Stocks as lotteries",
+    "Ang et al. (2006) - Cross-Section of Volatility",
+    "Sloan (1996) - Do Stock Prices Fully Reflect Information in Accruals",
+    "Novy-Marx (2013) - The Other Side of Value: Gross Profitability",
+    "Jegadeesh & Titman (1993) - Returns to Buying Winners and Selling Losers",
+    "Zhang et al. (2025) - CSAlpha: Cross-sectional Alpha with Attention",
+    "Zhang et al. (2023) - More Powerful Tests for Anomalies in China A-Share",
+    "DeMiguel et al. (2025) - Not All Factors Crowd Equally",
+    "Ball et al. (2016) - Accruals, Cash Flows, and Operating Profitability",
+    "Harvey et al. (2016) - ... and the Cross-Section of Expected Returns",
+    "Fama & French (2015) - A Five-Factor Asset Pricing Model",
+    "Hou et al. (2015) - Digesting Anomalies: An Investment Approach",
+    "Carhart (1997) - On Persistence in Mutual Fund Performance",
+    "Stambaugh et al. (2012) - The Short of It: Investor Sentiment and Anomalies",
+    "Asness (1997) - The Interaction of Value and Momentum Strategies",
+    "Blitz & van Vliet (2007) - The Volatility Effect",
+    "Pastor & Stambaugh (2003) - Liquidity Risk and Expected Stock Returns",
+    "Titman et al. (2004) - Capital Investment and Stock Returns",
+    "Cooper et al. (2008) - Asset Growth and the Cross-Section of Stock Returns",
+    "Ibbotson & Chen (2003) - Long-Run Stock Returns",
+    "Campbell et al. (2008) - Search in the Stock Market",
+    "Amihud (2002) - Illiquidity and Stock Returns",
+    "Easley et al. (2002) - Is Information Risk a Determinant of Asset Returns?",
+    "Chordia et al. (2000) - Trading Volume and Cross-Autocorrelations in Stock Returns",
+    "Hong & Stein (1999) - A Unified Theory of Underreaction, Momentum, and Overreaction",
+    "Moskowitz & Grinblatt (1999) - Do Industries Explain Momentum?",
+    "Daniel & Titman (2006) - Market Reactions to Tangible and Intangible Information"
+  ],
+  "factors": [
+    {
+      "id": "F001",
+      "name": "短期反转(成交量加权)",
+      "category": "反转/动量",
+      "source_papers": ["Jegadeesh & Titman (1993)", "Hong & Stein (1999)"],
+      "a_share_validation": "强 (A股散户主导，过度反应显著)",
+      "definition": {
+        "formula": "-rank(ts_mean(ret_20d * volume_20d, 20) / ts_mean(volume_20d, 20))",
+        "explanation": "过去20日成交量加权平均收益，取负值排序。高成交量下的反转更强(散户过度反应)。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.03 - 0.06"
+      },
+      "required_fields": ["close", "volume"],
+      "derived_fields": ["ret_20d", "volume_20d"],
+      "calculation": {
+        "steps": [
+          "1. 计算20日收益率 ret_20d = (close / delay(close,20)) - 1",
+          "2. 计算20日成交量 volume_20d = ts_mean(volume, 20)",
+          "3. 计算成交量加权收益 vwap_ret = ret_20d * volume_20d / ts_mean(volume_20d, 20)",
+          "4. 取负值并排序 -rank(vwap_ret)"
+        ],
+        "python_signature": "def short_term_reversal_vw(close: pd.Series, volume: pd.Series, window: int = 20) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.03 to +0.05",
+        "sharpe_lift": "+0.15 to +0.30",
+        "drawdown_impact": "中性或轻微改善",
+        "turnover": "月度40-50%(需平滑)",
+        "decay_halflife": "5-10天"
+      },
+      "test_logic": [
+        "test_ic_negative: IC均值 < 0",
+        "test_size_corr_low: 中性化后|size_corr| < 0.15",
+        "test_turnover_reasonable: 月度换手率 < 50%",
+        "test_high_volume_stronger: 高成交量子样本IC绝对值 > 低成交量子样本"
+      ],
+      "priority": "P0",
+      "dependencies": [],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F002",
+      "name": "彩票偏好规避",
+      "category": "行为金融/散户",
+      "source_papers": ["Bali et al. (2011)", "Stambaugh et al. (2012)"],
+      "a_share_validation": "强 (A股散户彩票偏好显著)",
+      "definition": {
+        "formula": "-(MAX_20d / VOL_20d * 0.5 + rank(ivol_20d) * 0.3 + rank(skew_20d) * 0.2)",
+        "explanation": "规避高最大日收益(MAX)、高特质波动率(ivol)、高偏度(skew)的股票。这些特征吸引散户过度追捧，导致未来低收益。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": ["high", "low", "close", "volume"],
+      "derived_fields": ["MAX_20d", "ivol_20d", "skew_20d"],
+      "calculation": {
+        "steps": [
+          "1. MAX_20d = ts_max(high/close - 1, 20)  # 20日内最大日收益",
+          "2. ivol_20d = std(residuals from market regression, 20)  # 特质波动率",
+          "3. skew_20d = skew(ret, 20)  # 日收益偏度",
+          "4. 组合 = -(MAX_20d * 0.5 + rank(ivol) * 0.3 + rank(skew) * 0.2)"
+        ],
+        "python_signature": "def lottery_avoidance(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series, market_ret: pd.Series, window: int = 20) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.10 to +0.20",
+        "drawdown_impact": "改善(降低极端波动暴露)",
+        "turnover": "月度30-40%",
+        "decay_halflife": "15-25天"
+      },
+      "test_logic": [
+        "test_ic_negative: 因子IC均值 < 0",
+        "test_corr_with_reversal: |corr(F002, F001)| < 0.5",
+        "test_high_max_underperform: MAX前20%组合未来收益 < MAX后20%"
+      ],
+      "priority": "P0",
+      "dependencies": ["F001"],
+      "estimated_effort": "1.5h"
+    },
+    {
+      "id": "F003",
+      "name": "股东集中度",
+      "category": "行为金融/机构",
+      "source_papers": ["Campbell et al. (2008)", "中国A股筹码集中度研究"],
+      "a_share_validation": "中(数据可得性受限)",
+      "definition": {
+        "formula": "-pct_change(shareholders, 1q) 或 -turnover_rank + ret_20d_rank * 0.5",
+        "explanation": "股东户数减少=筹码集中(机构吸筹)。无股东数据时，用高换手率+近期正收益作为proxy。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.02 - 0.03"
+      },
+      "required_fields": ["shareholders"],
+      "fallback_fields": ["volume", "close"],
+      "derived_fields": ["shareholder_change", "turnover_rank", "ret_20d_rank"],
+      "calculation": {
+        "steps": [
+          "PRIMARY: 1. 获取季度股东户数 shareholders",
+          "PRIMARY: 2. 计算季度变化率 pct_change(shareholders, 1q)",
+          "PRIMARY: 3. 取负值 -pct_change(shareholders) # 减少=正信号",
+          "FALLBACK: 1. 计算20日换手率 turnover = volume / float_shares",
+          "FALLBACK: 2. 计算20日收益 rank",
+          "FALLBACK: 3. 组合 = -rank(turnover) + rank(ret_20d) * 0.5"
+        ],
+        "python_signature": "def shareholder_concentration(shareholders: pd.Series = None, volume: pd.Series = None, close: pd.Series = None, float_shares: pd.Series = None) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.03",
+        "sharpe_lift": "+0.05 to +0.15",
+        "drawdown_impact": "轻微改善",
+        "turnover": "月度20-30%(低频)",
+        "decay_halflife": "30-60天"
+      },
+      "test_logic": [
+        "test_fallback_works: 无shareholders列时fallback逻辑正确",
+        "test_positive_ic: 筹码集中应有正IC",
+        "test_low_turnover: fallback版本月度换手率 < 30%"
+      ],
+      "priority": "P1",
+      "dependencies": [],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F004",
+      "name": "收益加速(PEAD)",
+      "category": "盈利动量",
+      "source_papers": ["Ball & Brown (1968)", "PEAD in China"],
+      "a_share_validation": "中(季报披露后漂移显著但窗口短)",
+      "definition": {
+        "formula": "ret_5d / (abs(ret_20d) + 0.01) - 1",
+        "explanation": "近期收益加速程度。5日收益相对20日收益的加速率，捕捉信息扩散初期的加速alpha。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": ["close"],
+      "derived_fields": ["ret_5d", "ret_20d"],
+      "calculation": {
+        "steps": [
+          "1. ret_5d = (close / delay(close,5)) - 1",
+          "2. ret_20d = (close / delay(close,20)) - 1",
+          "3. acceleration = ret_5d / (abs(ret_20d) + 0.01) - 1"
+        ],
+        "python_signature": "def earnings_acceleration_proxy(close: pd.Series, short_window: int = 5, long_window: int = 20) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.05 to +0.15",
+        "drawdown_impact": "中性",
+        "turnover": "月度40-50%",
+        "decay_halflife": "5-10天"
+      },
+      "test_logic": [
+        "test_ic_positive: 收益加速应有正IC",
+        "test_corr_with_momentum: |corr(F004, mom20d)| < 0.6 # 与纯动量不同"
+      ],
+      "priority": "P1",
+      "dependencies": ["F001"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F005",
+      "name": "质量价值",
+      "category": "质量",
+      "source_papers": ["Novy-Marx (2013)", "Ball et al. (2016)"],
+      "a_share_validation": "中(质量因子在A股有效但弱于美股)",
+      "definition": {
+        "formula": "-pb + operating_cashflow/mcap * 0.3",
+        "explanation": "在便宜股中筛选质量好的。低PB + 高经营现金流/市值，避免价值陷阱。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.015 - 0.025"
+      },
+      "required_fields": ["pb", "operating_cashflow"],
+      "fallback_fields": ["pb"],
+      "derived_fields": ["ocf_mcap_ratio"],
+      "calculation": {
+        "steps": [
+          "PRIMARY: 1. ocf_mcap = operating_cashflow / mcap",
+          "PRIMARY: 2. 组合 = -pb + ocf_mcap * 0.3",
+          "FALLBACK: 组合 = -pb # 纯价值因子"
+        ],
+        "python_signature": "def quality_value(pb: pd.Series, operating_cashflow: pd.Series = None, mcap: pd.Series = None) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.015 to +0.025",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "改善(质量过滤降低价值陷阱)",
+        "turnover": "月度20-30%(低频)",
+        "decay_halflife": "30-60天"
+      },
+      "test_logic": [
+        "test_fallback: 无财务数据时fallback到-pb",
+        "test_ic_positive: 质量价值应有正IC",
+        "test_avoid_trap: 高PB+低OCF组合未来收益 < 低PB+高OCF"
+      ],
+      "priority": "P1",
+      "dependencies": [],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F006",
+      "name": "特质波动率异象",
+      "category": "波动率",
+      "source_papers": ["Ang et al. (2006)", "Blitz & van Vliet (2007)"],
+      "a_share_validation": "强(高ivol股票未来收益低)",
+      "definition": {
+        "formula": "-rank(std(residuals from market regression, 20))",
+        "explanation": "高特质波动率股票未来收益更低。可能原因是高ivol吸引散户，或套利限制。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.03 - 0.05"
+      },
+      "required_fields": ["close", "market_index"],
+      "derived_fields": ["ivol_20d"],
+      "calculation": {
+        "steps": [
+          "1. 日收益 ret = close / delay(close,1) - 1",
+          "2. 市场回归 residuals = ret - beta * market_ret",
+          "3. ivol = std(residuals, 20)",
+          "4. 取负值 -rank(ivol)"
+        ],
+        "python_signature": "def idiosyncratic_volatility(close: pd.Series, market_ret: pd.Series, window: int = 20) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.03 to +0.05",
+        "sharpe_lift": "+0.15 to +0.25",
+        "drawdown_impact": "显著改善(降低高波动暴露)",
+        "turnover": "月度30-40%",
+        "decay_halflife": "15-25天"
+      },
+      "test_logic": [
+        "test_ic_negative: 高ivol应有负IC",
+        "test_corr_with_lottery: |corr(F006, F002)| < 0.6 # 与彩票因子不同"
+      ],
+      "priority": "P0",
+      "dependencies": ["F002"],
+      "estimated_effort": "1.5h"
+    },
+    {
+      "id": "F007",
+      "name": "最大日收益(MAX)",
+      "category": "行为金融/散户",
+      "source_papers": ["Bali et al. (2011)", "Stambaugh et al. (2012)"],
+      "a_share_validation": "强(A股散户追涨停)",
+      "definition": {
+        "formula": "-ts_max(high/close - 1, 20)",
+        "explanation": "过去20日最大日收益(MAX)越高，未来收益越低。散户被单日大涨吸引，推高价格。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": ["high", "close"],
+      "derived_fields": ["MAX_20d"],
+      "calculation": {
+        "steps": [
+          "1. 日收益 ret = high / close - 1  # 用high/close而非close/close前日",
+          "2. MAX_20d = ts_max(ret, 20)",
+          "3. 取负值 -MAX_20d"
+        ],
+        "python_signature": "def max_daily_return(high: pd.Series, close: pd.Series, window: int = 20) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.10 to +0.20",
+        "drawdown_impact": "改善(规避极端单日)",
+        "turnover": "月度30-40%",
+        "decay_halflife": "15-25天"
+      },
+      "test_logic": [
+        "test_ic_negative: MAX因子应有负IC",
+        "test_high_max_underperform: MAX前20%组合未来收益显著低于后20%"
+      ],
+      "priority": "P0",
+      "dependencies": ["F002"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F008",
+      "name": "盈利质量(应计异象)",
+      "category": "质量",
+      "source_papers": ["Sloan (1996)", "Ball et al. (2016)"],
+      "a_share_validation": "中(应计异象在A股存在但较弱)",
+      "definition": {
+        "formula": "-(accruals / total_assets)",
+        "explanation": "高应计利润的股票未来收益更低。现金流比利润更可靠。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.015 - 0.025"
+      },
+      "required_fields": ["accruals", "total_assets"],
+      "fallback_fields": [],
+      "derived_fields": ["accruals_ratio"],
+      "calculation": {
+        "steps": [
+          "1. accruals = delta(accounts_receivable) + delta(inventory) - delta(accounts_payable)",
+          "2. 或简化为 accruals = net_income - operating_cashflow",
+          "3. accruals_ratio = accruals / total_assets",
+          "4. 取负值 -accruals_ratio"
+        ],
+        "python_signature": "def accruals_quality(accruals: pd.Series, total_assets: pd.Series) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.015 to +0.025",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "中性",
+        "turnover": "季度(低频)",
+        "decay_halflife": "60-90天"
+      },
+      "test_logic": [
+        "test_ic_negative: 高应计应有负IC",
+        "test_cash_better: 高现金流组合收益 > 高利润组合"
+      ],
+      "priority": "P2",
+      "dependencies": ["F005"],
+      "estimated_effort": "1.5h"
+    },
+    {
+      "id": "F009",
+      "name": "总资产增长率",
+      "category": "投资",
+      "source_papers": ["Cooper et al. (2008)", "Titman et al. (2004)"],
+      "a_share_validation": "中(高增长公司往往过度投资)",
+      "definition": {
+        "formula": "-(total_assets / delay(total_assets,4q) - 1)",
+        "explanation": "资产增长率越低越好。高增长公司往往过度投资，资本配置效率低。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.02 - 0.03"
+      },
+      "required_fields": ["total_assets"],
+      "derived_fields": ["asset_growth"],
+      "calculation": {
+        "steps": [
+          "1. asset_growth = total_assets / delay(total_assets, 4q) - 1",
+          "2. 取负值 -asset_growth"
+        ],
+        "python_signature": "def asset_growth(total_assets: pd.Series, window: int = 4) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.03",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "中性",
+        "turnover": "季度(低频)",
+        "decay_halflife": "60-90天"
+      },
+      "test_logic": [
+        "test_ic_negative: 高资产增长应有负IC",
+        "test_investment_efficiency: 低增长组合ROE > 高增长组合"
+      ],
+      "priority": "P2",
+      "dependencies": ["F005"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F010",
+      "name": "毛利率",
+      "category": "质量/盈利",
+      "source_papers": ["Novy-Marx (2013)"],
+      "a_share_validation": "中(毛利率在A股有预测力但弱于ROE)",
+      "definition": {
+        "formula": "gross_profit / total_assets",
+        "explanation": "Novy-Marx提出的质量因子。毛利率比ROE更稳定，更少被操纵。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.015 - 0.03"
+      },
+      "required_fields": ["gross_profit", "total_assets"],
+      "derived_fields": ["gross_profitability"],
+      "calculation": {
+        "steps": [
+          "1. gross_profitability = gross_profit / total_assets"
+        ],
+        "python_signature": "def gross_profitability(gross_profit: pd.Series, total_assets: pd.Series) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.015 to +0.03",
+        "sharpe_lift": "+0.05 to +0.15",
+        "drawdown_impact": "改善(质量因子降低风险)",
+        "turnover": "季度(低频)",
+        "decay_halflife": "60-90天"
+      },
+      "test_logic": [
+        "test_ic_positive: 毛利率应有正IC",
+        "test_stability: 毛利率IC稳定性 > ROE IC稳定性"
+      ],
+      "priority": "P2",
+      "dependencies": ["F005"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F011",
+      "name": "非流动性(Amihud)",
+      "category": "流动性",
+      "source_papers": ["Amihud (2002)", "Pastor & Stambaugh (2003)"],
+      "a_share_validation": "强(非流动性溢价在A股显著)",
+      "definition": {
+        "formula": "ts_mean(abs(ret) / amount, 20)",
+        "explanation": "Amihud非流动性指标。高非流动性 = 高流动性风险 = 未来高收益补偿。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": ["close", "amount"],
+      "derived_fields": ["amihud_illiq"],
+      "calculation": {
+        "steps": [
+          "1. ret = close / delay(close,1) - 1",
+          "2. amihud = ts_mean(abs(ret) / amount, 20)",
+          "3. 取正值(不取负) # 高非流动性 = 高预期收益"
+        ],
+        "python_signature": "def amihud_illiquidity(close: pd.Series, amount: pd.Series, window: int = 20) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.10 to +0.20",
+        "drawdown_impact": "中性(小盘股流动性差但收益高)",
+        "turnover": "月度20-30%",
+        "decay_halflife": "30-60天"
+      },
+      "test_logic": [
+        "test_ic_positive: 非流动性应有正IC",
+        "test_small_cap_bias: 中性化后size_corr < 0.2"
+      ],
+      "priority": "P1",
+      "dependencies": ["UC1-1"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F012",
+      "name": "隔夜跳空",
+      "category": "日内结构",
+      "source_papers": ["Alpha101 #20", "Hong & Stein (1999)"],
+      "a_share_validation": "中(A股跳空较多但T+1限制)",
+      "definition": {
+        "formula": "rank(open - delay(close,1)) / rank(abs(open - delay(close,1)))",
+        "explanation": "隔夜跳空方向与幅度。大幅向上跳空后往往有回补。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.015 - 0.03"
+      },
+      "required_fields": ["open", "close"],
+      "derived_fields": ["overnight_gap"],
+      "calculation": {
+        "steps": [
+          "1. gap = open - delay(close,1)",
+          "2. gap_pct = gap / delay(close,1)",
+          "3. 排序 rank(gap_pct)"
+        ],
+        "python_signature": "def overnight_gap(open: pd.Series, close: pd.Series) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.015 to +0.03",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "中性",
+        "turnover": "月度40-50%",
+        "decay_halflife": "1-3天"
+      },
+      "test_logic": [
+        "test_ic_negative: 大幅跳空应有负IC",
+        "test_gap_fill: 向上跳空后3日内回补概率 > 50%"
+      ],
+      "priority": "P1",
+      "dependencies": ["F001"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F013",
+      "name": "VWAP偏离",
+      "category": "日内结构",
+      "source_papers": ["Alpha101 #42", "Alpha101 #5"],
+      "a_share_validation": "中(日内结构数据可用但T+1限制)",
+      "definition": {
+        "formula": "rank(vwap - close) / rank(vwap + close)",
+        "explanation": "VWAP相对收盘价的偏离。vwap > close表示日内卖方主导(机构出货)。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.015 - 0.03"
+      },
+      "required_fields": ["vwap", "close"],
+      "derived_fields": ["vwap_deviation"],
+      "calculation": {
+        "steps": [
+          "1. vwap_deviation = (vwap - close) / close",
+          "2. 排序 rank(vwap_deviation)"
+        ],
+        "python_signature": "def vwap_deviation(vwap: pd.Series, close: pd.Series) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.015 to +0.03",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "中性",
+        "turnover": "月度40-50%",
+        "decay_halflife": "1-3天"
+      },
+      "test_logic": [
+        "test_ic_negative: vwap>close应有负IC",
+        "test_distribution: vwap_deviation分布近似对称"
+      ],
+      "priority": "P2",
+      "dependencies": ["F001"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F014",
+      "name": "价格-成交量相关性",
+      "category": "价量背离",
+      "source_papers": ["Alpha101 #3", "Chordia et al. (2000)"],
+      "a_share_validation": "强(A股量价背离显著)",
+      "definition": {
+        "formula": "-correlation(rank(close), rank(volume), 10)",
+        "explanation": "价格与成交量的秩相关性。负相关=价量背离=反转信号。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": ["close", "volume"],
+      "derived_fields": ["price_volume_corr"],
+      "calculation": {
+        "steps": [
+          "1. rank_close = rank(close)",
+          "2. rank_volume = rank(volume)",
+          "3. corr = correlation(rank_close, rank_volume, 10)",
+          "4. 取负值 -corr"
+        ],
+        "python_signature": "def price_volume_divergence(close: pd.Series, volume: pd.Series, window: int = 10) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.10 to +0.20",
+        "drawdown_impact": "中性",
+        "turnover": "月度30-40%",
+        "decay_halflife": "5-10天"
+      },
+      "test_logic": [
+        "test_ic_positive: 负相关应有正IC",
+        "test_divergence_signal: 价量背离时未来5日收益反向"
+      ],
+      "priority": "P0",
+      "dependencies": ["F001"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F015",
+      "name": "收益方差比",
+      "category": "波动率",
+      "source_papers": ["Alpha101 #1", "Blitz & van Vliet (2007)"],
+      "a_share_validation": "中(低波动异象在A股存在)",
+      "definition": {
+        "formula": "stddev(returns, 20) / stddev(returns, 60)",
+        "explanation": "短期波动率相对长期波动率的比率。高比率=波动率上升=风险增加。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.015 - 0.03"
+      },
+      "required_fields": ["close"],
+      "derived_fields": ["vol_ratio"],
+      "calculation": {
+        "steps": [
+          "1. ret = close / delay(close,1) - 1",
+          "2. vol_short = stddev(ret, 20)",
+          "3. vol_long = stddev(ret, 60)",
+          "4. vol_ratio = vol_short / vol_long",
+          "5. 取负值 -rank(vol_ratio)"
+        ],
+        "python_signature": "def volatility_ratio(close: pd.Series, short_window: int = 20, long_window: int = 60) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.015 to +0.03",
+        "sharpe_lift": "+0.05 to +0.15",
+        "drawdown_impact": "改善(低波动筛选)",
+        "turnover": "月度30-40%",
+        "decay_halflife": "15-25天"
+      },
+      "test_logic": [
+        "test_ic_negative: 高波动率比应有负IC",
+        "test_low_vol_outperform: 低波动组合长期收益 > 高波动组合"
+      ],
+      "priority": "P1",
+      "dependencies": ["F006"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F016",
+      "name": "行业动量",
+      "category": "动量",
+      "source_papers": ["Moskowitz & Grinblatt (1999)", "Hong & Stein (1999)"],
+      "a_share_validation": "中(行业动量在A股有效但需行业分类)",
+      "definition": {
+        "formula": "industry_avg_ret_20d",
+        "explanation": "行业层面的20日动量。领先行业在未来1-3个月继续跑赢。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": ["close", "industry_code"],
+      "derived_fields": ["industry_momentum"],
+      "calculation": {
+        "steps": [
+          "1. ret_20d = close / delay(close,20) - 1",
+          "2. 按行业分组计算均值 industry_avg = groupby(industry_code).mean(ret_20d)",
+          "3. 映射回个股"
+        ],
+        "python_signature": "def industry_momentum(close: pd.Series, industry_code: pd.Series, window: int = 20) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.10 to +0.20",
+        "drawdown_impact": "中性",
+        "turnover": "月度20-30%",
+        "decay_halflife": "30-60天"
+      },
+      "test_logic": [
+        "test_ic_positive: 行业动量应有正IC",
+        "test_industry_persistence: 领先行业3个月后仍领先"
+      ],
+      "priority": "P2",
+      "dependencies": ["UC1-3"],
+      "estimated_effort": "1.5h"
+    },
+    {
+      "id": "F017",
+      "name": "异质信念波动率",
+      "category": "行为金融",
+      "source_papers": ["Hong & Stein (1999)", "Campbell et al. (2008)"],
+      "a_share_validation": "中(散户分歧度与收益负相关)",
+      "definition": {
+        "formula": "stddev(ret, 20) / abs(ts_mean(ret, 20))",
+        "explanation": "波动率与收益绝对值的比率。高比率=高分歧=散户观点分歧大=未来收益低。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.015 - 0.03"
+      },
+      "required_fields": ["close"],
+      "derived_fields": ["disagreement"],
+      "calculation": {
+        "steps": [
+          "1. ret = close / delay(close,1) - 1",
+          "2. disagreement = stddev(ret, 20) / abs(ts_mean(ret, 20) + 0.001)",
+          "3. 取负值 -rank(disagreement)"
+        ],
+        "python_signature": "def disagreement_volatility(close: pd.Series, window: int = 20) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.015 to +0.03",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "中性",
+        "turnover": "月度30-40%",
+        "decay_halflife": "15-25天"
+      },
+      "test_logic": [
+        "test_ic_negative: 高分歧应有负IC",
+        "test_high_turnover: 高分歧股票换手率显著更高"
+      ],
+      "priority": "P2",
+      "dependencies": ["F006"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F018",
+      "name": "换手率异常",
+      "category": "流动性",
+      "source_papers": ["Alpha101 #7", "Chordia et al. (2000)"],
+      "a_share_validation": "强(高换手股票未来收益低)",
+      "definition": {
+        "formula": "-rank(turnover_20d / delay(turnover_20d, 20) - 1)",
+        "explanation": "换手率异常增长。换手率突然上升=散户涌入=未来收益低。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": ["volume", "float_shares"],
+      "derived_fields": ["turnover_change"],
+      "calculation": {
+        "steps": [
+          "1. turnover_20d = volume / float_shares",
+          "2. turnover_change = turnover_20d / delay(turnover_20d, 20) - 1",
+          "3. 取负值 -rank(turnover_change)"
+        ],
+        "python_signature": "def turnover_anomaly(volume: pd.Series, float_shares: pd.Series, window: int = 20) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.10 to +0.20",
+        "drawdown_impact": "改善(规避高换手陷阱)",
+        "turnover": "月度30-40%",
+        "decay_halflife": "15-25天"
+      },
+      "test_logic": [
+        "test_ic_negative: 高换手增长应有负IC",
+        "test_retail_proxy: 高换手组合散户比例显著更高"
+      ],
+      "priority": "P0",
+      "dependencies": ["F001"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F019",
+      "name": "收盘位置值",
+      "category": "日内结构",
+      "source_papers": ["Alpha101 #101", "Daniel & Titman (2006)"],
+      "a_share_validation": "中(日内收盘位置有信息)",
+      "definition": {
+        "formula": "(close - open) / ((high - low) + 0.001)",
+        "explanation": "日内收盘位置。+1=全天最高收盘(强势)，-1=全天最低收盘(弱势)。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.015 - 0.025"
+      },
+      "required_fields": ["open", "high", "low", "close"],
+      "derived_fields": ["close_location"],
+      "calculation": {
+        "steps": [
+          "1. close_location = (close - open) / ((high - low) + 0.001)"
+        ],
+        "python_signature": "def close_location_value(open: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.015 to +0.025",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "中性",
+        "turnover": "月度40-50%",
+        "decay_halflife": "1-3天"
+      },
+      "test_logic": [
+        "test_ic_positive: 高收盘位置应有正IC",
+        "test_continuation: 高收盘位置次日开盘跳空概率 > 50%"
+      ],
+      "priority": "P2",
+      "dependencies": ["F001"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F020",
+      "name": "漂移状态动量",
+      "category": "动量/反转",
+      "source_papers": ["Hong & Stein (1999)", "现有S7策略"],
+      "a_share_validation": "弱(已在S7中实现，效果一般)",
+      "definition": {
+        "formula": "if ts_min(ret, 5) > 0: momentum else: reversal",
+        "explanation": "趋势状态判断。连续5日正收益=趋势状态=动量；否则=反转。",
+        "expected_ic_sign": "positive(in trend), negative(in reversal)",
+        "expected_ic_magnitude": "0.01 - 0.02"
+      },
+      "required_fields": ["close"],
+      "derived_fields": ["drift_state"],
+      "calculation": {
+        "steps": [
+          "1. ret = close / delay(close,1) - 1",
+          "2. if ts_min(ret, 5) > 0: factor = rank(ret) # 动量",
+          "3. else: factor = -rank(ret) # 反转"
+        ],
+        "python_signature": "def drift_state_momentum(close: pd.Series, short_window: int = 5) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.02",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "中性",
+        "turnover": "月度40-50%",
+        "decay_halflife": "5-10天"
+      },
+      "test_logic": [
+        "test_conditional: 趋势状态动量IC>0, 反转状态IC<0"
+      ],
+      "priority": "P3",
+      "dependencies": ["F001"],
+      "estimated_effort": "0.5h"
+    },
+    {
+      "id": "F021",
+      "name": "贝塔套利",
+      "category": "风险",
+      "source_papers": ["Fama & French (1992)", "Asness (1997)"],
+      "a_share_validation": "弱(A股贝塔与收益关系不稳定)",
+      "definition": {
+        "formula": "-rank(beta_60d)",
+        "explanation": "低贝塔股票风险调整后收益更高。规避高贝塔陷阱。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.01 - 0.02"
+      },
+      "required_fields": ["close", "market_index"],
+      "derived_fields": ["beta_60d"],
+      "calculation": {
+        "steps": [
+          "1. ret = close / delay(close,1) - 1",
+          "2. market_ret = market_index / delay(market_index,1) - 1",
+          "3. beta_60d = covariance(ret, market_ret, 60) / variance(market_ret, 60)",
+          "4. 取负值 -rank(beta_60d)"
+        ],
+        "python_signature": "def beta_arbitrage(close: pd.Series, market_index: pd.Series, window: int = 60) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.02",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "改善(降低系统性风险)",
+        "turnover": "月度20-30%",
+        "decay_halflife": "30-60天"
+      },
+      "test_logic": [
+        "test_ic_negative: 高贝塔应有负IC",
+        "test_low_beta_outperform: 低贝塔组合夏普 > 高贝塔组合"
+      ],
+      "priority": "P3",
+      "dependencies": ["F006"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F022",
+      "name": "收益偏度",
+      "category": "行为金融",
+      "source_papers": ["Stambaugh et al. (2012)", "Bali et al. (2011)"],
+      "a_share_validation": "中(偏度偏好存在)",
+      "definition": {
+        "formula": "-rank(skew(ret, 60))",
+        "explanation": "高偏度股票吸引彩票偏好投资者，导致定价过高。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.01 - 0.03"
+      },
+      "required_fields": ["close"],
+      "derived_fields": ["skew_60d"],
+      "calculation": {
+        "steps": [
+          "1. ret = close / delay(close,1) - 1",
+          "2. skew_60d = skew(ret, 60)",
+          "3. 取负值 -rank(skew_60d)"
+        ],
+        "python_signature": "def skewness_avoidance(close: pd.Series, window: int = 60) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.03",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "改善",
+        "turnover": "月度20-30%",
+        "decay_halflife": "30-60天"
+      },
+      "test_logic": [
+        "test_ic_negative: 高偏度应有负IC",
+        "test_lottery_corr: |corr(F022, F002)| < 0.6"
+      ],
+      "priority": "P2",
+      "dependencies": ["F002"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F023",
+      "name": "趋势强度",
+      "category": "动量",
+      "source_papers": ["Alpha101 #9", "Jegadeesh & Titman (1993)"],
+      "a_share_validation": "中(趋势判断在A股有效)",
+      "definition": {
+        "formula": "abs(ts_mean(ret, 20)) / stddev(ret, 20)",
+        "explanation": "收益均值与标准差的比率。高比率=强趋势=动量持续。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.01 - 0.02"
+      },
+      "required_fields": ["close"],
+      "derived_fields": ["trend_strength"],
+      "calculation": {
+        "steps": [
+          "1. ret = close / delay(close,1) - 1",
+          "2. trend_strength = abs(ts_mean(ret, 20)) / stddev(ret, 20)",
+          "3. 排序 rank(trend_strength)"
+        ],
+        "python_signature": "def trend_strength(close: pd.Series, window: int = 20) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.02",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "中性",
+        "turnover": "月度30-40%",
+        "decay_halflife": "15-25天"
+      },
+      "test_logic": [
+        "test_ic_positive: 强趋势应有正IC",
+        "test_momentum_persistence: 强趋势组合未来20日收益 > 弱趋势"
+      ],
+      "priority": "P3",
+      "dependencies": ["F001"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F024",
+      "name": "ADR(累积/分布比率)",
+      "category": "价量",
+      "source_papers": ["Alpha101 #12", "Williams (1985)"],
+      "a_share_validation": "中(日内资金流向有信息)",
+      "definition": {
+        "formula": "sign(delta(volume)) * (-delta(close))",
+        "explanation": "成交量变化方向与价格变化方向的交互。量价背离信号。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.01 - 0.02"
+      },
+      "required_fields": ["close", "volume"],
+      "derived_fields": ["adr"],
+      "calculation": {
+        "steps": [
+          "1. vol_change = sign(volume - delay(volume,1))",
+          "2. price_change = -(close - delay(close,1))",
+          "3. adr = vol_change * price_change"
+        ],
+        "python_signature": "def accumulation_distribution(close: pd.Series, volume: pd.Series) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.02",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "中性",
+        "turnover": "月度40-50%",
+        "decay_halflife": "1-5天"
+      },
+      "test_logic": [
+        "test_positive: 量价同向应有正IC",
+        "test_divergence: 量价背离时因子值最大"
+      ],
+      "priority": "P3",
+      "dependencies": ["F014"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F025",
+      "name": "动量质量",
+      "category": "动量",
+      "source_papers": ["Asness (1997)", "现有S10策略"],
+      "a_share_validation": "中(已在S10中部分实现)",
+      "definition": {
+        "formula": "rank(mom_20d) * rank(volatility_20d)",
+        "explanation": "高质量动量：高收益但低波动。高动量+低波动=机构主导的持续趋势。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.01 - 0.02"
+      },
+      "required_fields": ["close"],
+      "derived_fields": ["mom_20d", "volatility_20d"],
+      "calculation": {
+        "steps": [
+          "1. mom_20d = close / delay(close,20) - 1",
+          "2. vol_20d = stddev(close/delay(close,1)-1, 20)",
+          "3. 组合 = rank(mom_20d) * rank(vol_20d)"
+        ],
+        "python_signature": "def momentum_quality(close: pd.Series, window: int = 20) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.02",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "改善(低波动筛选)",
+        "turnover": "月度30-40%",
+        "decay_halflife": "15-25天"
+      },
+      "test_logic": [
+        "test_ic_positive: 高质量动量应有正IC",
+        "test_low_vol_filter: 组合波动率 < 纯动量组合"
+      ],
+      "priority": "P3",
+      "dependencies": ["F001", "F006"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F026",
+      "name": "长尾收益",
+      "category": "分布",
+      "source_papers": ["Bali et al. (2011)", "Stambaugh et al. (2012)"],
+      "a_share_validation": "弱(数据要求高)",
+      "definition": {
+        "formula": "percentile(ret, 95) - percentile(ret, 5)",
+        "explanation": "日收益分布的尾部宽度。宽尾部=极端风险高=散户主导。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.01 - 0.02"
+      },
+      "required_fields": ["close"],
+      "derived_fields": ["tail_return"],
+      "calculation": {
+        "steps": [
+          "1. ret = close / delay(close,1) - 1",
+          "2. tail = percentile(ret, 95) - percentile(ret, 5)",
+          "3. 取负值 -rank(tail)"
+        ],
+        "python_signature": "def tail_return_spread(close: pd.Series, window: int = 60) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.02",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "改善",
+        "turnover": "月度20-30%",
+        "decay_halflife": "30-60天"
+      },
+      "test_logic": [
+        "test_ic_negative: 宽尾部应有负IC",
+        "test_tail_risk: 宽尾部组合最大回撤 > 窄尾部"
+      ],
+      "priority": "P3",
+      "dependencies": ["F002"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F027",
+      "name": "盈利动量",
+      "category": "盈利",
+      "source_papers": ["Ball & Brown (1968)", "PEAD in China"],
+      "a_share_validation": "中(季报动量在A股有效但窗口短)",
+      "definition": {
+        "formula": "SUE = (EPS - expected_EPS) / stddev(EPS, 8q)",
+        "explanation": "标准化未预期盈余。盈余 surprise 越大，未来漂移越强。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": ["EPS", "expected_EPS"],
+      "fallback_fields": ["close"],
+      "derived_fields": ["SUE"],
+      "calculation": {
+        "steps": [
+          "PRIMARY: 1. SUE = (EPS - expected_EPS) / stddev(EPS, 8q)",
+          "FALLBACK: 1. ret_60d = close / delay(close,60) - 1 # 用收益代替EPS surprise"
+        ],
+        "python_signature": "def earnings_momentum(EPS: pd.Series = None, expected_EPS: pd.Series = None, close: pd.Series = None) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.10 to +0.20",
+        "drawdown_impact": "中性",
+        "turnover": "季度(低频)",
+        "decay_halflife": "30-60天"
+      },
+      "test_logic": [
+        "test_ic_positive: SUE应有正IC",
+        "test_PEAD: 高SUE组合未来60日收益持续漂移"
+      ],
+      "priority": "P1",
+      "dependencies": ["F004"],
+      "estimated_effort": "1.5h"
+    },
+    {
+      "id": "F028",
+      "name": "现金流价格比",
+      "category": "价值",
+      "source_papers": ["Ball et al. (2016)", "Fama & French (2015)"],
+      "a_share_validation": "中(现金流比利润更可靠)",
+      "definition": {
+        "formula": "operating_cashflow / mcap",
+        "explanation": "经营现金流/市值。比P/E更不容易被操纵。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.02 - 0.03"
+      },
+      "required_fields": ["operating_cashflow", "mcap"],
+      "fallback_fields": ["pb"],
+      "derived_fields": ["cfp"],
+      "calculation": {
+        "steps": [
+          "PRIMARY: 1. cfp = operating_cashflow / mcap",
+          "FALLBACK: 1. cfp = -pb # 纯价值proxy"
+        ],
+        "python_signature": "def cashflow_price(operating_cashflow: pd.Series = None, mcap: pd.Series = None, pb: pd.Series = None) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.03",
+        "sharpe_lift": "+0.05 to +0.15",
+        "drawdown_impact": "改善",
+        "turnover": "季度(低频)",
+        "decay_halflife": "60-90天"
+      },
+      "test_logic": [
+        "test_ic_positive: 高CFP应有正IC",
+        "test_vs_PE: CFP组合夏普 > P/E组合"
+      ],
+      "priority": "P2",
+      "dependencies": ["F005"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F029",
+      "name": "研发投入强度",
+      "category": "成长",
+      "source_papers": ["Eberhart et al. (2004)", "中国科技成长股研究"],
+      "a_share_validation": "弱(A股研发数据质量参差不齐)",
+      "definition": {
+        "formula": "R&D_expense / total_revenue",
+        "explanation": "研发投入强度。高研发投入公司未来成长潜力大。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.01 - 0.02"
+      },
+      "required_fields": ["R&D_expense", "total_revenue"],
+      "fallback_fields": [],
+      "derived_fields": ["rd_intensity"],
+      "calculation": {
+        "steps": [
+          "1. rd_intensity = R&D_expense / total_revenue"
+        ],
+        "python_signature": "def rd_intensity(RD_expense: pd.Series, total_revenue: pd.Series) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.02",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "中性",
+        "turnover": "季度(低频)",
+        "decay_halflife": "60-90天"
+      },
+      "test_logic": [
+        "test_ic_positive: 高研发投入应有正IC",
+        "test_growth: 高研发组合未来营收增长 > 低研发"
+      ],
+      "priority": "P3",
+      "dependencies": ["F005"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F030",
+      "name": "分析师预期修正",
+      "category": "预期",
+      "source_papers": ["Zhang et al. (2023)", "PEAD in China"],
+      "a_share_validation": "弱(分析师覆盖度低)",
+      "definition": {
+        "formula": "(current_EPS_estimate - previous_EPS_estimate) / abs(previous_EPS_estimate)",
+        "explanation": "分析师预期上调。预期修正=新信息=未来收益。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.02 - 0.03"
+      },
+      "required_fields": ["EPS_estimate", "previous_EPS_estimate"],
+      "fallback_fields": ["close"],
+      "derived_fields": ["estimate_revision"],
+      "calculation": {
+        "steps": [
+          "PRIMARY: 1. revision = (EPS_estimate - previous) / abs(previous)",
+          "FALLBACK: 1. revision = ret_20d # 用近期收益代替"
+        ],
+        "python_signature": "def analyst_revision(EPS_estimate: pd.Series = None, previous_estimate: pd.Series = None, close: pd.Series = None) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.03",
+        "sharpe_lift": "+0.05 to +0.15",
+        "drawdown_impact": "中性",
+        "turnover": "月度20-30%",
+        "decay_halflife": "30-60天"
+      },
+      "test_logic": [
+        "test_ic_positive: 预期上调应有正IC",
+        "test_revision_persistence: 上调后60日收益持续"
+      ],
+      "priority": "P3",
+      "dependencies": ["F004", "F027"],
+      "estimated_effort": "1.5h"
+    }
+  ],
+  "factor_groups": {
+    "P0_critical": ["F001", "F002", "F006", "F007", "F014", "F018"],
+    "P1_high": ["F003", "F004", "F005", "F011", "F012", "F027", "F028"],
+    "P2_medium": ["F008", "F009", "F010", "F013", "F015", "F016", "F017", "F022"],
+    "P3_low": ["F019", "F020", "F021", "F023", "F024", "F025", "F026", "F029", "F030"]
+  },
+  "implementation_plan": {
+    "phase_1": {
+      "name": "P0因子实施(6个)",
+      "duration": "2-3天",
+      "factors": ["F001", "F002", "F006", "F007", "F014", "F018"],
+      "dependencies": ["UC1-1", "UC1-2"],
+      "expected_total_ic_lift": "+0.15 to +0.25",
+      "expected_sharpe_lift": "+0.5 to +1.0"
+    },
+    "phase_2": {
+      "name": "P1因子实施(7个)",
+      "duration": "3-4天",
+      "factors": ["F003", "F004", "F005", "F011", "F012", "F027", "F028"],
+      "dependencies": ["phase_1"],
+      "expected_total_ic_lift": "+0.10 to +0.15",
+      "expected_sharpe_lift": "+0.3 to +0.5"
+    },
+    "phase_3": {
+      "name": "P2因子实施(8个)",
+      "duration": "4-5天",
+      "factors": ["F008", "F009", "F010", "F013", "F015", "F016", "F017", "F022"],
+      "dependencies": ["phase_2"],
+      "expected_total_ic_lift": "+0.05 to +0.10",
+      "expected_sharpe_lift": "+0.2 to +0.3"
+    },
+    "phase_4": {
+      "name": "P3因子实施(9个)",
+      "duration": "5-7天",
+      "factors": ["F019", "F020", "F021", "F023", "F024", "F025", "F026", "F029", "F030"],
+      "dependencies": ["phase_3"],
+      "expected_total_ic_lift": "+0.03 to +0.05",
+      "expected_sharpe_lift": "+0.1 to +0.2"
+    }
+  },
+  "cross_factor_analysis": {
+    "expected_correlations": {
+      "F001-F002": "0.3 - 0.5 (都与散户行为相关)",
+      "F001-F006": "0.2 - 0.4 (反转与低波动相关)",
+      "F002-F007": "0.5 - 0.7 (彩票与MAX高度相关)",
+      "F005-F008": "0.3 - 0.5 (质量与盈利质量相关)",
+      "F014-F018": "0.2 - 0.4 (价量与换手率相关)"
+    },
+    "diversification_potential": "30个因子中约15-20个具有独立alpha来源，可构建10-15因子组合",
+    "optimal_combination": "F001(反转) + F002(彩票) + F005(质量) + F006(ivol) + F011(非流动性) + F014(价量)"
+  }
+}
