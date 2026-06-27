@@ -179,7 +179,7 @@ def test_p0_engine():
     
     # 测试1: 关闭所有 P0 功能 (与原引擎一致)
     print("  [1/4] 关闭 P0 功能...")
-    engine1 = P0EnhancedEngine(
+    engine1 = P0EngineV2(
         factor_panel=factor_df,
         return_panel=return_df,
         enable_pit_universe=False,
@@ -192,7 +192,7 @@ def test_p0_engine():
     
     # 测试2: 启用 PIT universe
     print("  [2/4] 启用 PIT universe...")
-    engine2 = P0EnhancedEngine(
+    engine2 = P0EngineV2(
         factor_panel=factor_df,
         return_panel=return_df,
         enable_pit_universe=True,
@@ -205,7 +205,7 @@ def test_p0_engine():
     
     # 测试3: 启用风险护栏
     print("  [3/4] 启用风险护栏...")
-    engine3 = P0EnhancedEngine(
+    engine3 = P0EngineV2(
         factor_panel=factor_df,
         return_panel=return_df,
         enable_pit_universe=False,
@@ -218,7 +218,7 @@ def test_p0_engine():
     
     # 测试4: 启用所有 P0 功能
     print("  [4/4] 启用所有 P0 功能...")
-    engine4 = P0EnhancedEngine(
+    engine4 = P0EngineV2(
         factor_panel=factor_df,
         return_panel=return_df,
         enable_pit_universe=True,
@@ -256,7 +256,7 @@ def main():
     print("  2. data/adv_impact.py    — ADV 冲击成本模型 (UA2)")
     print("  3. data/risk_overlay.py  — 三层风险护栏 (UD1)")
     print("  4. research_loop/deflated_sharpe.py — Deflated Sharpe (UA3)")
-    print("  5. p0_enhanced_engine.py — P0 集成引擎")
+    print("  5. p0_engine_v2.py          — P0 集成引擎 v2")
     print()
 
 

@@ -277,9 +277,10 @@ class NewAlphaFactors:
         # 加权日收益 = 日收益 × 成交量权重
         weighted_ret = daily_ret * vol_rank
         
-        # 20日累计加权收益（滚动窗口）
-        cum_weighted_ret = weighted_ret.groupby(level="symbol").rolling(window, min_periods=5).sum().reset_index(level=0, drop=True)
-        cum_weighted_ret.index = self.panel.index
+        # 20日累计加权收益（滚动窗口）— 使用 transform 保持索引对齐
+        cum_weighted_ret = weighted_ret.groupby(level="symbol").transform(
+            lambda x: x.rolling(window, min_periods=5).sum()
+        )
         
         # 过滤涨停/跌停后的反转（这些不反映真实情绪）
         if "is_limit_up" in self.panel.columns and "is_limit_down" in self.panel.columns:
@@ -614,7 +615,7 @@ class FactorZooEvaluator:
             turnover = (curr_r[common] - prev_r[common]).abs().mean() / 2
             turnover_list.append(turnover)
         
-        return np.mean(turnover_list) if turnover_list else 0.0
+        return np.nanmean(turnover_list) if turnover_list else 0.0
     
     def compute_decay_halflife(self, factor: pd.Series) -> float:
         """计算 IC 衰减半衰期（简化版）"""

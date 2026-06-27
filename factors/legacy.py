@@ -50,6 +50,12 @@ def load_price_data(data_dir: str, symbols: Optional[List[str]] = None) -> pd.Da
         if symbols and symbol not in symbols:
             continue
         df = pd.read_parquet(f)
+        # Skip non-stock parquet files (e.g. adv_panel.parquet) that lack a 'date' column
+        if 'date' not in df.columns:
+            if 'date' in df.index.names:
+                df = df.reset_index()
+            else:
+                continue  # Not a stock price file, skip
         df['symbol'] = symbol
         df['date'] = pd.to_datetime(df['date'])
         dfs.append(df)
