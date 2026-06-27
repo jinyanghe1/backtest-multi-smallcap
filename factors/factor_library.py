@@ -244,9 +244,15 @@ def amihud_illiquidity(panel: pd.DataFrame, window: int = 20) -> pd.Series:
     Formula: ts_mean( abs(daily_return) / amount, window )
     Logic: High illiquidity = high liquidity risk = future return compensation.
     Expected IC: positive, IC ~ 0.02-0.04
+
+    Fallback: if amount is not available, use volume * close as proxy.
     """
     close = panel["close"]
-    amount = panel["amount"]
+    amount = panel.get("amount")
+    if amount is None or amount.isna().all():
+        # Proxy: amount ≈ volume * close (avg price × volume)
+        volume = panel["volume"]
+        amount = volume * close
 
     ret = close.groupby(level="symbol", group_keys=False).pct_change().abs()
     illiq = ret / amount.replace(0, np.nan)
