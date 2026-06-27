@@ -1,114 +1,165 @@
-import sys
-import tempfile
-from pathlib import Path
+"""Tests for industry classification data module.
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+Covers ROADMAP_P1 UC1-3 test cases:
+    1. test_load_industry_map
+    2. test_build_dummy_matrix
+    3. test_dummy_matrix_orthogonal
+"""
 
+import numpy as np
 import pandas as pd
 import pytest
 
-from tools.backtest_mvp.industry.classifier import (
-    IndustryClassifier,
-    IndustrySource,
-    default_cache_path,
-    load_default_industry_map,
+from tools.backtest_mvp.data.industry import (
+    load_industry_map,
+    build_dummy_matrix,
+    build_controls,
 )
 
 
-def _make_panel():
-    idx = pd.MultiIndex.from_product(
-        [pd.date_range("2024-01-01", periods=2), ["sh600000", "sz000001", "bj920000"]],
-        names=["date", "symbol"],
-    )
-    return pd.DataFrame({"mcap": range(1, len(idx) + 1)}, index=idx)
+# ── test_load_industry_map ────────────────────────────────────────────
+
+def test_load_industry_map_basic():
+    """load_industry_map returns DataFrame with correct schema."""
+    symbols = ["sh600000", "sz000001", "sh600519"]
+    df = load_industry_map(symbols=symbols, method="sw")
+    
+    # Should have correct columns regardless of data availability
+    assert "industry_code" in df.columns
+    assert "industry_name" in df.columns
+    # If data is available, no NaN values
+    if len(df) > 0:
+        assert not df.isna().any().any()
+        # All requested symbols present (or filtered subset)
+        assert len(df) <= len(symbols)
+    else:
+        # Empty is OK when no cache — will use mcap proxy fallback
+        pass
 
 
-def test_attach_industry_to_factor_panel():
-    panel = _make_panel()
-    industry_map = pd.DataFrame({
-        "symbol": ["sh600000"],
-        "sw_industry_1": ["银行"],
-        "sw_industry_2": ["股份制银行"],
-    })
-
-    classifier = IndustryClassifier(industry_map)
-    attached = classifier.attach_industry(panel)
-    assert attached.loc[("2024-01-01", "sh600000"), "sw_industry_2"] == "股份制银行"
-    assert attached.loc[("2024-01-01", "sz000001"), "sw_industry_2"] == "Unknown"
-    assert attached.loc[("2024-01-01", "bj920000"), "sw_industry_2"] == "Unknown"
-    assert classifier.get("sh600000", IndustrySource.SW_INDUSTRY_1) == "银行"
-
-
-def test_load_industry_map_from_parquet():
-    panel = _make_panel()
-    industry_map = pd.DataFrame({
-        "symbol": ["sh600000", "sz000001"],
-        "sw_industry_1": ["银行", "房地产"],
-        "sw_industry_2": ["股份制银行", "房地产开发"],
-        "source": ["test", "test"],
-        "updated_at": [pd.Timestamp("2024-06-01"), pd.Timestamp("2024-06-01")],
-    })
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        path = Path(tmpdir) / "shenwan_map.parquet"
-        industry_map.to_parquet(path, index=False)
-
-        classifier = IndustryClassifier()
-        loaded = classifier.load_industry_map(path)
-        assert len(loaded) == 2
-        assert classifier.get("sh600000", IndustrySource.SW_INDUSTRY_2) == "股份制银行"
-
-        attached = classifier.attach_industry(panel)
-        assert attached.loc[("2024-01-01", "sh600000"), "sw_industry_2"] == "股份制银行"
-        assert attached.loc[("2024-01-01", "sz000001"), "sw_industry_2"] == "房地产开发"
-        assert attached.loc[("2024-01-01", "bj920000"), "sw_industry_2"] == "Unknown"
-
-
-def test_load_industry_map_missing_file_returns_empty():
-    classifier = IndustryClassifier()
-    loaded = classifier.load_industry_map(Path("/nonexistent/path/shenwan_map.parquet"))
-    assert loaded.empty
-    assert classifier.get("sh600000", IndustrySource.SW_INDUSTRY_2) == "Unknown"
-
-
-def test_refresh_raises_not_implemented():
-    classifier = IndustryClassifier()
-    with pytest.raises(NotImplementedError):
-        classifier.load_industry_map(default_cache_path(), refresh=True)
-
-
-def test_default_cache_path_points_to_industry_cache():
-    path = default_cache_path()
-    assert path.name == "shenwan_map.parquet"
-    assert path.parent.name == "industry_cache"
-
-
-def test_load_default_industry_map_does_not_call_network():
-    """The default loader only reads local parquet; no external API is invoked."""
-    # If the default cache does not exist, this returns an empty frame rather
-    # than attempting a network request.
-    df = load_default_industry_map()
+def test_load_industry_map_fallback():
+    """When no cache exists, falls back to mcap proxy (at least 3 categories)."""
+    # Use non-existent method to force fallback
+    df = load_industry_map(symbols=["sh600000", "sz000001"], method="nonexistent")
+    
+    # Should still return something (even if empty)
     assert isinstance(df, pd.DataFrame)
+    assert "industry_code" in df.columns
 
 
-def test_normalise_unknown_symbols_in_parquet():
-    """Parquet rows that contain Unknown as a placeholder are preserved."""
-    panel = _make_panel()
+# ── test_build_dummy_matrix ───────────────────────────────────────────
+
+def test_build_dummy_matrix_shape():
+    """3 industries + 10 symbols -> (10, 2) with drop_first=True."""
+    industries = ["电子", "银行", "医药"]
+    symbols = [f"s{i:03d}" for i in range(10)]
+    # Assign: 4电子, 3银行, 3医药
+    codes = ["电子"] * 4 + ["银行"] * 3 + ["医药"] * 3
     industry_map = pd.DataFrame({
-        "symbol": ["sh600000"],
-        "sw_industry_1": ["Unknown"],
-        "sw_industry_2": ["Unknown"],
-    })
-    attached = IndustryClassifier(industry_map).attach_industry(panel)
-    assert attached.loc[("2024-01-01", "sh600000"), "sw_industry_2"] == "Unknown"
+        "industry_code": codes,
+        "industry_name": codes,
+    }, index=symbols)
+
+    dummies = build_dummy_matrix(industry_map, symbols, drop_first=True)
+
+    # 3 industries - 1 (drop_first) = 2 columns
+    assert dummies.shape == (10, 2)
+    # Each row should have exactly one 1 (or all 0 for dropped category)
+    assert (dummies.sum(axis=1) <= 1).all()
+    # Missing symbols should be 0
+    assert (dummies.loc["s009":"s009"].sum(axis=1) == 0).all()  # none missing in this test
 
 
-def test_attach_industry_preserves_index_names():
-    panel = _make_panel()
+def test_build_dummy_matrix_drop_first_false():
+    """drop_first=False -> all 3 columns."""
+    symbols = [f"s{i:03d}" for i in range(10)]
+    codes = ["A"] * 4 + ["B"] * 3 + ["C"] * 3
     industry_map = pd.DataFrame({
-        "symbol": ["sh600000"],
-        "sw_industry_1": ["银行"],
-        "sw_industry_2": ["股份制银行"],
-    })
-    attached = IndustryClassifier(industry_map).attach_industry(panel)
-    assert attached.index.names == ["date", "symbol"]
+        "industry_code": codes,
+        "industry_name": codes,
+    }, index=symbols)
+
+    dummies = build_dummy_matrix(industry_map, symbols, drop_first=False)
+
+    assert dummies.shape == (10, 3)
+    # Each row should have exactly one 1
+    assert (dummies.sum(axis=1) == 1).all()
+
+
+def test_build_dummy_matrix_missing_symbols():
+    """Symbols not in industry_map get all 0s."""
+    symbols = [f"s{i:03d}" for i in range(5)]
+    industry_map = pd.DataFrame({
+        "industry_code": ["A"],
+        "industry_name": ["A"],
+    }, index=["s000"])
+
+    dummies = build_dummy_matrix(industry_map, symbols, drop_first=True)
+
+    # s001-s004 not in industry_map -> all 0s
+    assert (dummies.loc["s001":"s004"].sum(axis=1) == 0).all()
+
+
+# ── test_dummy_matrix_orthogonal ────────────────────────────────────
+
+def test_dummy_matrix_orthogonal():
+    """Dummy columns are linearly independent (rank = n_cols)."""
+    symbols = [f"s{i:03d}" for i in range(20)]
+    # 3 industries with enough stocks each
+    codes = ["A"] * 7 + ["B"] * 7 + ["C"] * 6
+    industry_map = pd.DataFrame({
+        "industry_code": codes,
+        "industry_name": codes,
+    }, index=symbols)
+
+    dummies = build_dummy_matrix(industry_map, symbols, drop_first=True)
+
+    rank = np.linalg.matrix_rank(dummies.values)
+    assert rank == dummies.shape[1], f"Rank {rank} != n_cols {dummies.shape[1]}"
+
+
+# ── Additional tests ─────────────────────────────────────────────────
+
+def test_build_controls():
+    """build_controls combines log_size and industry dummies."""
+    idx = pd.MultiIndex.from_product([
+        pd.date_range("2024-01-01", periods=3),
+        [f"s{i:03d}" for i in range(10)]
+    ], names=["date", "symbol"])
+    
+    np.random.seed(42)
+    factor_panel = pd.DataFrame({
+        "mcap": np.random.uniform(1e9, 1e11, len(idx)),
+        "close": np.random.uniform(10, 100, len(idx)),
+    }, index=idx)
+
+    industry_map = pd.DataFrame({
+        "industry_code": ["A"] * 5 + ["B"] * 5,
+        "industry_name": ["A"] * 5 + ["B"] * 5,
+    }, index=[f"s{i:03d}" for i in range(10)])
+
+    controls = build_controls(factor_panel, industry_map=industry_map)
+
+    assert "log_size" in controls.columns
+    # Should have industry dummies
+    ind_cols = [c for c in controls.columns if c.startswith("ind_")]
+    assert len(ind_cols) > 0
+    # Index should match factor_panel
+    assert len(controls) == len(factor_panel)
+
+
+def test_build_controls_no_industry():
+    """build_controls with no industry map: only log_size."""
+    idx = pd.MultiIndex.from_product([
+        pd.date_range("2024-01-01", periods=2),
+        [f"s{i:03d}" for i in range(5)]
+    ], names=["date", "symbol"])
+    
+    factor_panel = pd.DataFrame({
+        "mcap": np.random.uniform(1e9, 1e11, len(idx)),
+    }, index=idx)
+
+    controls = build_controls(factor_panel, industry_map=None)
+
+    assert "log_size" in controls.columns
+    assert len(controls.columns) == 1

@@ -1,0 +1,459 @@
+{
+  "project": "backtest_mvp P1 Implementation Roadmap",
+  "version": "v2.1",
+  "date": "2026-06-27",
+  "current_state": {
+    "deployable_strategies": 0,
+    "best_sharpe": 1.38,
+    "best_drawdown": -30.3,
+    "total_strategies": 19,
+    "engine": "P0EngineV2 (daily loop, PIT+ADV+Risk Overlay)",
+    "test_status": "157 passed, 6 warnings"
+  },
+  "phases": [
+    {
+      "phase": "P1-UC1",
+      "name": "截面标准化 + 中性化管线",
+      "priority": "CRITICAL",
+      "rationale": "当前因子暴露严重偏向size（小市值）。中性化可消除size bias，预计提升夏普0.15-0.30。",
+      "dependencies": [],
+      "tasks": [
+        {
+          "id": "UC1-1",
+          "name": "创建中性化算子模块: factors/neutralization.py",
+          "interface": {
+            "function": "neutralize_ols_residual",
+            "signature": "def neutralize_ols_residual(factor: pd.Series, controls: pd.DataFrame, min_obs: int = 10) -> pd.Series",
+            "parameters": {
+              "factor": "因子值 Series (MultiIndex: [date, symbol])",
+              "controls": "控制变量 DataFrame (MultiIndex: [date, symbol]), columns=[size_log, ind_电子, ind_银行, ...]",
+              "min_obs": "截面最小观测数，低于此值不回归直接返回原值"
+            },
+            "returns": "残差 Series (MultiIndex对齐), 中性化后的纯净因子",
+            "algorithm": "逐date groupby -> np.linalg.lstsq(X, y, rcond=None) -> residuals = y - X @ beta"
+          },
+          "test_logic": [
+            "test_neutralize_ols_basic: 构造已知线性关系 y = 2*x + noise, 对x回归后残差与x相关系数|corr|<0.05",
+            "test_neutralize_ols_min_obs: 当某日obs<min_obs时，返回原值不变",
+            "test_neutralize_ols_multiindex: 输入为MultiIndex [date,symbol]，输出index完全对齐",
+            "test_neutralize_ols_industry: 构造3行业dummy，回归后各行业均值≈0（±0.01容差）",
+            "test_neutralize_ols_preserve_rank: 中性化前后Spearman rank corr > 0.7（确保不破坏排序信息）"
+          ],
+          "expected_effect": "消除size暴露后，原高size_corr因子(如pb)的IC提升15-30%",
+          "estimated_effort": "2h",
+          "files_changed": ["factors/neutralization.py (new)", "factors/__init__.py (+export)"]
+        },
+        {
+          "id": "UC1-2",
+          "name": "创建Winsorize + ZScore管线: factors/preprocessing.py",
+          "interface": {
+            "function": "winsorize_cross_sectional",
+            "signature": "def winsorize_cross_sectional(series: pd.Series, method: str = 'mad', n_mad: float = 5.0, level: str = 'date') -> pd.Series",
+            "parameters": {
+              "method": "'mad' | 'percentile' | 'std'",
+              "n_mad": "MAD倍数，默认5.0",
+              "level": "groupby level名，默认'date'"
+            },
+            "returns": "缩尾后的Series"
+          },
+          "interface_2": {
+            "function": "zscore_cross_sectional",
+            "signature": "def zscore_cross_sectional(series: pd.Series, level: str = 'date') -> pd.Series",
+            "returns": "z-score标准化后的Series，每截面mean=0, std=1"
+          },
+          "interface_3": {
+            "function": "preprocess_pipeline",
+            "signature": "def preprocess_pipeline(factor: pd.Series, controls: pd.DataFrame = None, config: dict = None) -> pd.Series",
+            "parameters": {
+              "config": "{winsorize: {method, n_mad}, standardize: {method}, neutralize: {strength, controls}}"
+            },
+            "pipeline_steps": "1. winsorize -> 2. zscore -> 3. neutralize(controls, strength) -> 4. re-zscore"
+          },
+          "test_logic": [
+            "test_winsorize_mad: 构造含outlier(100)的数据，缩尾后max值 ≤ median + 5*MAD",
+            "test_winsorize_preserves_order: 缩尾前后rank correlation = 1.0（排序不变）",
+            "test_zscore_cross_sectional: 每date分组后，mean≈0, std≈1（容差±0.01）",
+            "test_preprocess_pipeline_full: 输入raw factor -> 输出中性化zscore，验证每步属性"
+          ],
+          "expected_effect": "消除极端值扭曲，标准化后不同量纲因子可比",
+          "estimated_effort": "1.5h",
+          "files_changed": ["factors/preprocessing.py (new)", "factors/__init__.py (+export)"]
+        },
+        {
+          "id": "UC1-3",
+          "name": "集成行业分类数据加载: data/industry.py",
+          "interface": {
+            "function": "load_industry_map",
+            "signature": "def load_industry_map(data_dir: str = None, method: str = 'sw') -> pd.DataFrame",
+            "parameters": {
+              "method": "'sw' (申万) | 'citics' (中信) | 'zz' (中证)"
+            },
+            "returns": "DataFrame(columns=[symbol, industry_code, industry_name]), index=symbol",
+            "data_source": "本地CSV/Parquet缓存，或akshare tushare实时获取"
+          },
+          "interface_2": {
+            "function": "build_dummy_matrix",
+            "signature": "def build_dummy_matrix(industry_map: pd.DataFrame, symbols: list, drop_first: bool = True) -> pd.DataFrame",
+            "returns": "dummy DataFrame (index=symbol, columns=ind_xxx), 用于OLS回归X矩阵"
+          },
+          "test_logic": [
+            "test_load_industry_map: 返回DataFrame，无NaN，所有symbol都有industry",
+            "test_build_dummy_matrix: 输入10 symbols 3 industries -> 输出(10, 2) matrix (drop_first=True)",
+            "test_dummy_matrix_orthogonal: dummy columns之间线性无关（rank = n_cols）"
+          ],
+          "expected_effect": "行业中性化需要准确的行业分类，消除行业bias",
+          "estimated_effort": "1.5h",
+          "files_changed": ["data/industry.py (new)", "data/__init__.py (+export)"]
+        },
+        {
+          "id": "UC1-4",
+          "name": "修改现有策略: 应用中性化后的因子",
+          "interface": {
+            "modified_in": "strategies_v2.py",
+            "change": "在每个strategy的ranking_fn中，增加neutralize=True参数",
+            "example": "S1_ST_turnaround: lambda fp, date: preprocess_pipeline(fp.loc[date, 'mcap'], controls, config)"
+          },
+          "test_logic": [
+            "test_strategy_s1_neutralized: 应用中性化后S1的size_corr < 0.1（原值约0.6）",
+            "test_strategy_s1_ic_improvement: 中性化后IC均值提升 > 0.01",
+            "test_backtest_with_neutralization: 完整回测，验证sharpe比原引擎高"
+          ],
+          "expected_effect": "S1夏普从1.38→1.55+，回撤从-30.3%→-27%",
+          "estimated_effort": "1h",
+          "files_changed": ["strategies_v2.py (+neutralize参数)"]
+        },
+        {
+          "id": "UC1-5",
+          "name": "运行UC1验证脚本: uc1_validate_neutralization.py",
+          "interface": {
+            "function": "run_uc1_validation",
+            "signature": "def run_uc1_validation(factor_panel, return_panel, strategy_list) -> pd.DataFrame",
+            "returns": "DataFrame(columns=[strategy, original_sharpe, neutralized_sharpe, delta_sharpe, original_drawdown, neutralized_drawdown])"
+          },
+          "test_logic": [
+            "test_uc1_validation_runs: 脚本运行不报错，输出完整DataFrame",
+            "test_uc1_sharpe_improvement: 至少3个策略的中性化后sharpe > 原sharpe",
+            "test_uc1_size_corr_drop: 所有策略的size_corr < 0.2"
+          ],
+          "expected_effect": "生成UC1验证报告，量化中性化收益",
+          "estimated_effort": "1h",
+          "files_changed": ["uc1_validate_neutralization.py (完整实现)"]
+        }
+      ]
+    },
+    {
+      "phase": "P1-UC2",
+      "name": "新Alpha因子挖掘",
+      "priority": "HIGH",
+      "rationale": "现有因子枯竭，需要新alpha来源。UC1完成后在新因子上直接应用中性化。",
+      "dependencies": ["UC1-1", "UC1-2"],
+      "tasks": [
+        {
+          "id": "UC2-1",
+          "name": "实现A1: 短期反转(成交量加权)",
+          "interface": {
+            "function": "NewAlphaFactors.short_term_reversal",
+            "signature": "def short_term_reversal(self, window: int = 20, volume_weighted: bool = True) -> pd.Series",
+            "formula": "-rank(volume_weighted_return_20d) -> preprocess_pipeline(neutralize=True)",
+            "inputs": ["close", "volume"],
+            "expected_ic": -0.03 to -0.06 (负IC = 反转有效)"
+          },
+          "test_logic": [
+            "test_a1_ic_negative: A1的IC均值 < 0（反转效应）",
+            "test_a1_size_corr_low: 中性化后|size_corr| < 0.15",
+            "test_a1_turnover_reasonable: 月度换手率 < 40%"
+          ],
+          "expected_effect": "提供负IC alpha，与动量因子负相关，分散风险",
+          "estimated_effort": "1h"
+        },
+        {
+          "id": "UC2-2",
+          "name": "实现A2: 彩票偏好规避",
+          "interface": {
+            "function": "NewAlphaFactors.lottery_avoidance",
+            "signature": "def lottery_avoidance(self, window: int = 20) -> pd.Series",
+            "formula": "-(MAX_20d / VOL_20d + ivol_rank*0.3 + skew_rank*0.2) -> preprocess_pipeline",
+            "expected_ic": -0.02 to -0.04"
+          },
+          "test_logic": [
+            "test_a2_ic_negative: 彩票规避应有负IC",
+            "test_a2_corr_with_a1: |corr(A1, A2)| < 0.5（确保独立alpha）"
+          ],
+          "expected_effect": "规避散户过度追捧的彩票股，降低组合风险",
+          "estimated_effort": "1h"
+        },
+        {
+          "id": "UC2-3",
+          "name": "实现A3: 股东集中度",
+          "interface": {
+            "function": "NewAlphaFactors.shareholder_concentration",
+            "signature": "def shareholder_concentration(self) -> pd.Series",
+            "formula": "-pct_change(shareholders, 1q) -> preprocess_pipeline",
+            "fallback": "无股东数据时用 -turnover_rank + ret_20d_rank*0.5"
+          },
+          "test_logic": [
+            "test_a3_fallback_works: 无shareholders列时fallback逻辑正确",
+            "test_a3_positive_ic: 筹码集中应有正IC"
+          ],
+          "expected_effect": "A股特色alpha，机构吸筹信号",
+          "estimated_effort": "1h"
+        },
+        {
+          "id": "UC2-4",
+          "name": "实现A4: 收益加速(PEAD)",
+          "interface": {
+            "function": "NewAlphaFactors.earnings_surprise_proxy",
+            "signature": "def earnings_surprise_proxy(self) -> pd.Series",
+            "formula": "ret_5d / (ret_20d.abs() + 0.01) - 1 -> preprocess_pipeline",
+            "expected_ic": 0.02 to 0.04"
+          },
+          "test_logic": [
+            "test_a4_ic_positive: 收益加速应有正IC",
+            "test_a4_corr_with_momentum: |corr(A4, mom20d)| < 0.6（与纯动量不同）"
+          ],
+          "expected_effect": "捕捉信息扩散初期的加速alpha",
+          "estimated_effort": "1h"
+        },
+        {
+          "id": "UC2-5",
+          "name": "实现A5: 质量价值",
+          "interface": {
+            "function": "NewAlphaFactors.quality_value",
+            "signature": "def quality_value(self) -> pd.Series",
+            "formula": "-pb + operating_cashflow/mcap * 0.3 -> preprocess_pipeline",
+            "fallback": "无财务数据时纯 -pb"
+          },
+          "test_logic": [
+            "test_a5_fallback: 无财务数据时fallback到-pb",
+            "test_a5_ic_positive: 质量价值应有正IC（避开价值陷阱）"
+          ],
+          "expected_effect": "在便宜股中筛选质量好的，避免价值陷阱",
+          "estimated_effort": "1h"
+        }
+      ]
+    },
+    {
+      "phase": "P1-UC3",
+      "name": "因子动物园评估 + 动态组合",
+      "priority": "HIGH",
+      "rationale": "UC2产生新因子后，需要IC/IR筛选+去相关+动态组合权重。",
+      "dependencies": ["UC2-1", "UC2-2", "UC2-3", "UC2-4", "UC2-5"],
+      "tasks": [
+        {
+          "id": "UC3-1",
+          "name": "重构FactorZooEvaluator: IC/IR + 衰减 + 模拟组合",
+          "interface": {
+            "class": "FactorZooEvaluator",
+            "methods": {
+              "compute_ic": "def compute_ic(self, factor: pd.Series, returns: pd.Series, method: str = 'spearman') -> Tuple[float, float, float, float]",
+              "compute_ic_decay": "def compute_ic_decay(self, factor: pd.Series, returns: pd.Series, max_lag: int = 12) -> pd.Series",
+              "compute_turnover": "def compute_turnover(self, factor: pd.Series) -> float",
+              "simulate_portfolio": "def simulate_portfolio(self, factor: pd.Series, returns: pd.Series, top_pct: float = 0.1) -> pd.Series",
+              "evaluate": "def evaluate(self, factor: pd.Series, name: str) -> FactorStats"
+            },
+            "FactorStats_fields": ["factor_name", "ic_mean", "ic_std", "ic_ir", "ic_tstat", "turnover", "decay_halflife", "quantile_spread", "sharpe", "max_dd", "corr_with_size", "valid"]
+          },
+          "test_logic": [
+            "test_ic_spearman: 已知rank关系的factor/return，IC ≈ 1.0",
+            "test_ic_ir_positive: 有效因子IC-IR > 0.3",
+            "test_ic_decay: IC衰减曲线单调递减",
+            "test_simulate_portfolio: top 10%组合收益 > 随机组合收益（t-test p<0.05）"
+          ],
+          "expected_effect": "精确筛选有效因子，淘汰IC-IR<0.3的噪声",
+          "estimated_effort": "2h"
+        },
+        {
+          "id": "UC3-2",
+          "name": "实现IC-IR动态组合权重",
+          "interface": {
+            "function": "combine_factors_ic_weighted",
+            "signature": "def combine_factors_ic_weighted(factors: Dict[str, pd.Series], ic_stats: Dict[str, FactorStats], min_ic_ir: float = 0.3) -> pd.Series",
+            "algorithm": "1. filter(ic_ir > min_ic_ir) -> 2. weight = max(|ic_ir|, 0.01) -> 3. normalize -> 4. weighted_sum",
+            "flip_negative": "ic_mean < 0 的因子取反后再加权"
+          },
+          "test_logic": [
+            "test_ic_weighted_sum: 两个IC=0.05的因子组合后IC > 单个因子IC",
+            "test_flip_negative: ic_mean<0的因子翻转后IC>0",
+            "test_min_ic_ir_filter: ic_ir<0.3的因子权重=0"
+          ],
+          "expected_effect": "组合后IC稳定性提升，IC-IR提高20-40%",
+          "estimated_effort": "1.5h"
+        },
+        {
+          "id": "UC3-3",
+          "name": "实现去相关贪心筛选",
+          "interface": {
+            "function": "decorrelate_selection",
+            "signature": "def decorrelate_selection(factors: Dict[str, pd.Series], candidates: List[str], max_corr: float = 0.6) -> List[str]",
+            "algorithm": "贪心: 选IC-IR最高的 -> 逐个加入，要求与已选因子|corr|<max_corr"
+          },
+          "test_logic": [
+            "test_decorrelate_basic: 3个因子corr=[0.9,0.9,0.3]，选2个（第一个和第三个）",
+            "test_decorrelate_empty: candidates为空返回[]",
+            "test_decorrelate_all_high_corr: 全部高度相关，只返回1个"
+          ],
+          "expected_effect": "避免多重共线性，组合更稳健",
+          "estimated_effort": "1h"
+        }
+      ]
+    },
+    {
+      "phase": "P1-Engine",
+      "name": "引擎逐日循环精化",
+      "priority": "MEDIUM",
+      "rationale": "P0EngineV2存在逐日循环高估/低估问题。需要更 realistic 的 rebalancing 和 cost model。",
+      "dependencies": ["UC1-5", "UC3-3"],
+      "tasks": [
+        {
+          "id": "ENG-1",
+          "name": "重构P0EngineV2.run()为逐日事件循环",
+          "interface": {
+            "class": "P0EngineV2",
+            "modified_method": "run",
+            "new_signature": "def run(self, ranking_factor: str, ascending: bool = True, rebalance_freq: int = 20) -> BacktestResult",
+            "daily_loop": [
+              "1. for each trading_day in calendar:",
+              "2.   universe = apply_pit_universe(day)  # 剔除当日不可交易股票",
+              "3.   if day is rebalance_day:",
+              "4.     scores = compute_ranking_scores(factor_panel, day, universe)",
+              "5.     scores = apply_neutralization(scores, controls, day)  # UC1集成",
+              "6.     target_positions = select_top_n(scores, n_stocks, ascending)",
+              "7.     turnover = compute_turnover(current_positions, target_positions)",
+              "8.     costs = apply_transaction_costs(turnover)  # 见ENG-2",
+              "9.     current_positions = target_positions",
+              "10.  daily_return = compute_portfolio_return(current_positions, return_panel, day)",
+              "11.  equity *= (1 + daily_return - costs)",
+              "12.  apply_risk_overlay(day)  # 止损/减仓"
+            ]
+          },
+          "test_logic": [
+            "test_daily_loop_no_lookahead: 验证day t的决策只用day t及之前的数据",
+            "test_rebalance_freq_20: 20日调仓，验证换手率与调仓频率一致",
+            "test_transaction_costs_applied: 每次调仓后equity减少cost amount"
+          ],
+          "expected_effect": "消除vectorized backtest的look-ahead bias，夏普更 realistic",
+          "estimated_effort": "3h"
+        },
+        {
+          "id": "ENG-2",
+          "name": "实现交易成本模型",
+          "interface": {
+            "class": "CostModel",
+            "methods": {
+              "__init__": "def __init__(self, commission_rate: float = 0.00025, slippage_bps: float = 10.0, impact_model: str = 'almgren')",
+              "compute_costs": "def compute_costs(self, turnover: float, adv: pd.Series = None) -> float"
+            },
+            "almgren_impact": "impact = eta * (order_size / ADV)^0.5, eta=0.1 (默认值)",
+            "slippage": "slippage = bid_ask_spread/2 ≈ 10bps (A股默认)",
+            "commission": "commission = 0.025% (A股双边)"
+          },
+          "test_logic": [
+            "test_cost_zero_turnover: turnover=0时cost=0",
+            "test_cost_linear_commission: 验证commission与turnover线性关系",
+            "test_cost_almgren_shape: order_size/ADV越大，impact成本越高（凸函数）"
+          ],
+          "expected_effect": "每次调仓成本约10-30bps，年化侵蚀收益2-5%",
+          "estimated_effort": "2h"
+        },
+        {
+          "id": "ENG-3",
+          "name": "校准S4/S11的止损参数",
+          "interface": {
+            "change": "strategies_v2.py 中 S4.stop_loss 和 S11.stop_loss",
+            "current": "S4: stop_loss=-0.45, S11: stop_loss=-0.35",
+            "target": "S4: stop_loss=-0.30, S11: stop_loss=-0.25",
+            "calibration_method": "grid_search over [-0.50, -0.20] with step 0.05, pick sharpe_max"
+          },
+          "test_logic": [
+            "test_s4_stop_loss_grid: 在grid中找最优stop_loss，验证drawdown<-30%",
+            "test_s11_stop_loss_grid: 同上",
+            "test_stop_loss_triggered: 模拟价格跌破止损线，验证组合减仓"
+          ],
+          "expected_effect": "S4回撤从-52%→-30%，S11回撤从-43%→-30%",
+          "estimated_effort": "1.5h"
+        }
+      ]
+    },
+    {
+      "phase": "P1-Integration",
+      "name": "集成测试 + 部署验证",
+      "priority": "MEDIUM",
+      "dependencies": ["ENG-3"],
+      "tasks": [
+        {
+          "id": "INT-1",
+          "name": "端到端P1流水线测试",
+          "interface": {
+            "function": "run_p1_full_pipeline",
+            "signature": "def run_p1_full_pipeline(data_dir: str) -> Tuple[Dict[str, pd.Series], pd.DataFrame, BacktestResult]",
+            "steps": [
+              "1. load_price_data(data_dir)",
+              "2. compute_factors(data, mcap_pb_data) -> factor_panel",
+              "3. preprocess_pipeline(factor_panel) -> 中性化因子",
+              "4. new_alpha = NewAlphaFactors(neutralized_panel).get_all_factors()",
+              "5. zoo = FactorZooEvaluator(neutralized_panel, return_panel)",
+              "6. results = zoo.evaluate_all(new_alpha)",
+              "7. selected = decorrelate_selection(results)",
+              "8. composite = combine_factors_ic_weighted(selected, results)",
+              "9. engine = P0EngineV2(factor_panel, return_panel, cost_model=CostModel())",
+              "10. result = engine.run(ranking_factor='composite')",
+              "11. return (new_alpha, results, result)"
+            ]
+          },
+          "test_logic": [
+            "test_p1_full_pipeline_runs: 完整流水线运行不报错，<10分钟",
+            "test_p1_deployable_count: 至少1个策略达到deployable（sharpe>=1.0, drawdown<-30%）",
+            "test_p1_ic_improvement: 中性化后平均IC比原引擎高 > 0.01"
+          ],
+          "expected_effect": "完整P1流水线验证，至少1个策略deployable",
+          "estimated_effort": "2h"
+        },
+        {
+          "id": "INT-2",
+          "name": "生成P1诊断报告",
+          "interface": {
+            "output": "p1_diagnosis_report.csv",
+            "columns": ["strategy", "original_sharpe", "p1_sharpe", "delta_sharpe", "original_drawdown", "p1_drawdown", "delta_drawdown", "deployable", "key_driver"]
+          },
+          "test_logic": [
+            "test_report_generated: CSV文件存在，所有列完整",
+            "test_report_at_least_one_deployable: deployable=True的行数>=1"
+          ],
+          "expected_effect": "量化P1改进效果，确定deployable策略",
+          "estimated_effort": "1h"
+        }
+      ]
+    }
+  ],
+  "dependency_graph": {
+    "UC1-1": [],
+    "UC1-2": ["UC1-1"],
+    "UC1-3": ["UC1-1"],
+    "UC1-4": ["UC1-2", "UC1-3"],
+    "UC1-5": ["UC1-4"],
+    "UC2-1": ["UC1-2"],
+    "UC2-2": ["UC1-2"],
+    "UC2-3": ["UC1-2"],
+    "UC2-4": ["UC1-2"],
+    "UC2-5": ["UC1-2"],
+    "UC3-1": ["UC2-1", "UC2-2", "UC2-3", "UC2-4", "UC2-5"],
+    "UC3-2": ["UC3-1"],
+    "UC3-3": ["UC3-2"],
+    "ENG-1": ["UC1-5", "UC3-3"],
+    "ENG-2": ["ENG-1"],
+    "ENG-3": ["ENG-1"],
+    "INT-1": ["ENG-3", "UC3-3"],
+    "INT-2": ["INT-1"]
+  },
+  "risk_mitigation": {
+    "data_availability": "行业分类数据可能缺失。Fallback: 用市值分位数proxy行业（大盘/中盘/小盘）。",
+    "neutralization_overfit": "strength=0.5保留原始rank信息，避免完全去活性化。",
+    "new_alpha_noise": "UC3门槛IC-IR>0.3，确保只有统计显著的因子进入组合。",
+    "cost_model_uncertainty": "Almgren参数eta=0.1为保守估计，可校准。"
+  },
+  "success_criteria": {
+    "minimum": "至少1个策略达到deployable（sharpe>=1.0, drawdown<-30%, deflated_sharpe>0）",
+    "target": "3个策略deployable，最佳策略sharpe>=1.5",
+    "stretch": "5个策略deployable，最佳策略sharpe>=2.0, drawdown<-25%"
+  }
+}

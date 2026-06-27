@@ -19,6 +19,8 @@ import pandas as pd
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Callable, Tuple
 
+from tools.backtest_mvp.factors.preprocessing import preprocess_pipeline
+
 
 @dataclass
 class BacktestResult:
@@ -244,6 +246,38 @@ class CrossSectionalEngine:
         pivot = r_slice.unstack(level=1)
         return pivot.reindex(columns=stocks, fill_value=0.0)
 
+    def _neutralize_snapshot(self, snapshot, factor_col, strength=0.5):
+        """Neutralize a single factor column in the snapshot (size + industry)."""
+        # Build controls from snapshot
+        controls = pd.DataFrame(index=snapshot.index)
+        # Size: log(mcap)
+        if 'mcap' in snapshot.columns:
+            controls['log_size'] = np.log(snapshot['mcap'].replace(0, np.nan).replace(-np.inf, np.nan))
+        # Industry: if available
+        if 'industry' in snapshot.columns:
+            ind_dummies = pd.get_dummies(snapshot['industry'].astype(str), prefix='ind', drop_first=True)
+            controls = pd.concat([controls, ind_dummies], axis=1)
+        # If no controls available, skip
+        if controls.empty or controls.shape[1] == 0:
+            return snapshot[factor_col]
+        # Neutralize
+        factor = snapshot[factor_col].copy()
+        config = {
+            'winsorize': {'method': 'mad', 'n_mad': 5.0, 'level': None},
+            'standardize': {'method': 'zscore', 'level': None},
+            'neutralize': {'strength': strength, 'min_obs': 10, 'enabled': True},
+            'restandardize': True,
+        }
+        return preprocess_pipeline(factor, controls=controls, config=config)
+
+    def _neutralize_snapshot_multi(self, snapshot, factor_cols, strength=0.5):
+        """Neutralize multiple factor columns."""
+        result = snapshot.copy()
+        for col in factor_cols:
+            if col in result.columns:
+                result[col] = self._neutralize_snapshot(result, col, strength)
+        return result
+
     def run(
         self,
         universe_filter: Callable[[pd.DataFrame, pd.DatetimeIndex, int], List[str]] = None,
@@ -256,6 +290,8 @@ class CrossSectionalEngine:
         take_profit_threshold: float = 0.50,
         ranking_fn: Optional[Callable[[pd.DataFrame], pd.Series]] = None,
         factor_weights: Optional[Dict[str, float]] = None,
+        neutralize: bool = False,
+        neutralize_strength: float = 0.5,
     ) -> BacktestResult:
         """
         执行截面回测
@@ -277,6 +313,8 @@ class CrossSectionalEngine:
                         如果提供了 ranking_fn, 将忽略 composite_factors 和 ranking_factor
             factor_weights: {因子名: 权重} — 仅当 composite_factors 启用时生效
                             默认 None = 等权; 提供时用加权和替代等权和
+            neutralize: 是否对 ranking_factor 做截面中性化 (size+industry 回归取残差)
+            neutralize_strength: 中性化强度 (0=不中性化, 0.5=移除50%暴露, 1.0=完全中性化)
 
         Returns:
             BacktestResult 对象
@@ -328,6 +366,14 @@ class CrossSectionalEngine:
                 limit_up_stocks = set(snapshot[snapshot['is_limit_up'] == True].index)
                 if limit_up_stocks:
                     selected = [s for s in selected if s not in limit_up_stocks]
+
+            # --- 第 2.5 步: 中性化 (可选) ---
+            if neutralize and ranking_factor in snapshot.columns:
+                snapshot_neut = snapshot.copy()
+                snapshot_neut[ranking_factor] = self._neutralize_snapshot(
+                    snapshot, ranking_factor, strength=neutralize_strength
+                )
+                snapshot = snapshot_neut
 
             # --- 第 3 步: 排名选股 (ranking_fn > composite_factors > ranking_factor) ---
             max_pick = self.n_stocks * 2 if self.price_limit_stocks else self.n_stocks

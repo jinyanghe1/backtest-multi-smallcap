@@ -12,6 +12,11 @@ from .legacy import (
     download_microcap_universe,
     get_data_summary,
 )
+from .industry import (
+    load_industry_map,
+    build_dummy_matrix,
+    build_controls,
+)
 
 __all__ = [
     "DATA_DIR",
@@ -20,5 +25,8 @@ __all__ = [
     "fetch_stock_quote",
     "download_microcap_universe",
     "get_data_summary",
+    "load_industry_map",
+    "build_dummy_matrix",
+    "build_controls",
 ]
 
