@@ -47,15 +47,18 @@ def load_price_data(data_dir: str, symbols: Optional[List[str]] = None) -> pd.Da
     dfs = []
     for f in files:
         symbol = f.stem  # "sh600000"
+        # Skip non-stock parquet files (e.g. adv_panel.parquet, index files, etc.)
+        if not symbol.startswith(('sh', 'sz', 'bj')):
+            continue
         if symbols and symbol not in symbols:
             continue
         df = pd.read_parquet(f)
-        # Skip non-stock parquet files (e.g. adv_panel.parquet) that lack a 'date' column
+        # Skip files that don't have a date column (not stock price data)
         if 'date' not in df.columns:
             if 'date' in df.index.names:
                 df = df.reset_index()
             else:
-                continue  # Not a stock price file, skip
+                continue
         df['symbol'] = symbol
         df['date'] = pd.to_datetime(df['date'])
         dfs.append(df)
@@ -86,6 +89,9 @@ def load_daily_mcap_pb(data_dir: str) -> pd.DataFrame:
     dfs = []
     for f in files:
         symbol = f.stem
+        # Skip non-stock parquet files
+        if not symbol.startswith(('sh', 'sz', 'bj')):
+            continue
         df = pd.read_parquet(f)
         df['date'] = pd.to_datetime(df['date'])
         df['symbol'] = symbol
@@ -135,15 +141,27 @@ def compute_factors(price_data: pd.DataFrame,
             pass
         # 如果 data 本来没有 mcap/pb (从 Parquet 加载时没有), merge 直接补充
         if 'mcap' in data.columns:
-            # pb 同理, 处理 nan
-            data['pb'] = data['pb'].ffill()
+            # 按股票前向填充 mcap/pb（解决同一股票日期间的缺失）
+            data['mcap'] = data.groupby('symbol')['mcap'].ffill()
+            data['pb'] = data.groupby('symbol')['pb'].ffill()
+            
+            # 对没有 mcap 历史数据的股票（如北交所新下载），用 close 作为 proxy
+            # 原理：价格低的股票通常市值小，close 与 mcap 有正相关性
+            mcap_na = data['mcap'].isna()
+            if mcap_na.sum() > 0:
+                n_na = mcap_na.sum()
+                n_stocks_na = data[mcap_na]['symbol'].nunique()
+                print(f"    ⚠️ mcap NaN: {n_na}/{len(data)} rows ({n_na/len(data)*100:.1f}%), "
+                      f"{n_stocks_na} 只股票无历史 mcap，使用 close 作为 proxy")
+                # 直接用 close 作为 proxy（不同股票价格不同，排序有效）
+                data.loc[mcap_na, 'mcap'] = data.loc[mcap_na, 'close']
         print(f"    ✓ 集成历史 mcap/pb ({mpb['symbol'].nunique()} 只, {mpb['date'].nunique()} 天)")
     else:
-        # Fallback: 使用静态值
-        if 'mcap' not in data.columns:
+        # Fallback: 使用静态值（仅当数据列完全缺失时）
+        if 'mcap' not in data.columns or data['mcap'].isna().all():
             print("    ⚠️ 无历史 mcap/pb — 使用静态近似值, 回测中排名可能不准确")
             data['mcap'] = 1.0
-        if 'pb' not in data.columns:
+        if 'pb' not in data.columns or data['pb'].isna().all():
             data['pb'] = 2.0
 
     data['mcap'] = data['mcap'].clip(lower=0.05, upper=50000)
@@ -193,6 +211,13 @@ def compute_factors(price_data: pd.DataFrame,
         data['turnover'] = (data['volume'] / avg_vol.replace(0, 1)).clip(0, 20)
     else:
         data['turnover'] = 2.0
+
+    # ── amount: compute from volume * close if missing (price*volume proxy) ──
+    # Original parquet has no 'amount' column; compute it as a proxy
+    if 'amount' not in data.columns or data['amount'].isna().all():
+        data['amount'] = data['volume'] * data['close']
+        # For rows where volume is 0, amount = 0 (valid for illiquid days)
+        data['amount'] = data['amount'].fillna(0).clip(lower=0)
 
     # 近 20/60 日动量
     data['mom20d'] = grouped['close'].transform(

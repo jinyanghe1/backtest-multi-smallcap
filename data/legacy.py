@@ -25,8 +25,8 @@ import sys
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_DIR / "data_cache"
-WESTOCK_SCRIPT = Path("/Users/riverosa/.workbuddy/plugins/marketplaces/cb_teams_marketplace/plugins/finance-data/skills/westock-data/scripts/index.js")
-NODE_BIN = Path("/Users/riverosa/.workbuddy/binaries/node/versions/22.22.2/bin/node")
+WESTOCK_SCRIPT = Path("/Users/hejinyang/.workbuddy/plugins/marketplaces/experts/plugins/stock-partner-team/skills/westock-data/scripts/index.js")
+NODE_BIN = Path("/Users/hejinyang/.workbuddy/binaries/node/versions/22.22.2/bin/node")
 
 
 def _westock(cmd: str, timeout: int = 60) -> dict:
