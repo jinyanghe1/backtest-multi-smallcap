@@ -20,14 +20,78 @@
     "question": "Is a backtest Sharpe < 1.5 meaningful for live deployment here?",
     "short_answer": "No. The headline 1.47 is a 1-month artifact; realistic full-period Sharpe is 0.6-0.85, and after three real-world haircuts likely < 0.5. The binding constraint is drawdown (-45% to -65%), not Sharpe.",
     "measured_results": [
-      {"id": "S1",  "name": "ST困境反转",          "annual": 49.3, "sharpe": 1.47, "mdd": -45.3, "win": 64.4, "note": "robust_start: ONLY 1 MONTH ran -> Sharpe statistically void"},
-      {"id": "S5",  "name": "壳资源深度价值",        "annual": 55.9, "sharpe": 0.83, "mdd": -51.4, "win": 56.3, "note": "highest return; full period; Calmar~1.09; shell-value alpha is policy-decaying"},
-      {"id": "S3",  "name": "极小小市值轮动",        "annual": 41.9, "sharpe": 0.67, "mdd": -43.2, "win": 55.7, "note": "pure size bet; ran 2 months before warning; beta not alpha"},
-      {"id": "SB",  "name": "多因子综合(Size+PB)",   "annual": 41.6, "sharpe": 0.67, "mdd": -43.2, "win": 51.9, "note": "best sustained multi-factor"},
-      {"id": "SC",  "name": "低波+低换手(吸筹)",      "annual": 34.3, "sharpe": 0.66, "mdd": -52.0, "win": 58.9, "note": "full period"},
-      {"id": "SA",  "name": "低波小市值",            "annual": 26.9, "sharpe": 0.61, "mdd": -47.0, "win": 61.5, "note": "full period"},
-      {"id": "S8",  "name": "盈利能力×低波动复合",    "annual": -79.8, "sharpe": -1.61, "mdd": -41.3, "win": 25.0, "note": "broken"},
-      {"id": "E-H", "name": "academic templates",    "annual": 4.6,  "sharpe": 0.10, "mdd": -45.0, "win": 54.0, "note": "regime/sentiment/ensemble/mtf all ~flat, barely beat benchmark"}
+      {
+        "id": "S1",
+        "name": "ST困境反转",
+        "annual": 49.3,
+        "sharpe": 1.47,
+        "mdd": -45.3,
+        "win": 64.4,
+        "note": "robust_start: ONLY 1 MONTH ran -> Sharpe statistically void"
+      },
+      {
+        "id": "S5",
+        "name": "壳资源深度价值",
+        "annual": 55.9,
+        "sharpe": 0.83,
+        "mdd": -51.4,
+        "win": 56.3,
+        "note": "highest return; full period; Calmar~1.09; shell-value alpha is policy-decaying"
+      },
+      {
+        "id": "S3",
+        "name": "极小小市值轮动",
+        "annual": 41.9,
+        "sharpe": 0.67,
+        "mdd": -43.2,
+        "win": 55.7,
+        "note": "pure size bet; ran 2 months before warning; beta not alpha"
+      },
+      {
+        "id": "SB",
+        "name": "多因子综合(Size+PB)",
+        "annual": 41.6,
+        "sharpe": 0.67,
+        "mdd": -43.2,
+        "win": 51.9,
+        "note": "best sustained multi-factor"
+      },
+      {
+        "id": "SC",
+        "name": "低波+低换手(吸筹)",
+        "annual": 34.3,
+        "sharpe": 0.66,
+        "mdd": -52.0,
+        "win": 58.9,
+        "note": "full period"
+      },
+      {
+        "id": "SA",
+        "name": "低波小市值",
+        "annual": 26.9,
+        "sharpe": 0.61,
+        "mdd": -47.0,
+        "win": 61.5,
+        "note": "full period"
+      },
+      {
+        "id": "S8",
+        "name": "盈利能力×低波动复合",
+        "annual": -79.8,
+        "sharpe": -1.61,
+        "mdd": -41.3,
+        "win": 25.0,
+        "note": "broken"
+      },
+      {
+        "id": "E-H",
+        "name": "academic templates",
+        "annual": 4.6,
+        "sharpe": 0.1,
+        "mdd": -45.0,
+        "win": 54.0,
+        "note": "regime/sentiment/ensemble/mtf all ~flat, barely beat benchmark"
+      }
     ],
     "three_haircuts_unmodeled_or_undermodeled": [
       "Survivorship bias: universe = today's survivors; delisted/退市/long-suspended micro-caps excluded -> upward-biased exactly where it hurts most (micro-cap tail).",
@@ -45,16 +109,96 @@
   },
   "current_alpha_exposure": "Deployed strategies bet almost entirely on SIZE + deep-VALUE(PB) + a little momentum/low-vol. These are the most crowded, most beta-like, most crash-prone micro-cap sources (cf. 2024-01 micro-cap crash). The behavioral, shareholder-structure, event-driven, and quality-screened-value alphas are untapped.",
   "alpha_source_taxonomy": [
-    {"id": "A1", "name": "Short-term reversal / liquidity provision", "economic_root": "Retail overreaction + illiquidity premium", "microcap_fit": "very high (retail-dominated float)", "decay_regime_risk": "low (capacity-limited, persistent)", "data_needed": "OHLCV (have) + real amount/turnover", "status": "underused (mom20d used as trend, not reversal)"},
-    {"id": "A2", "name": "Lottery-demand avoidance (MAX / idio-vol / skew)", "economic_root": "Retail gambling preference -> high-skew names overpriced", "microcap_fit": "high", "decay_regime_risk": "low (behavioral)", "data_needed": "OHLCV (have: max_ret, ivol, ts_skew exist)", "status": "operators exist, not assembled into a SHORT/avoid factor"},
-    {"id": "A3", "name": "Shareholder concentration (户数减少/筹码集中)", "economic_root": "Smart-money accumulation, float tightening", "microcap_fit": "high, distinctive A-share signal", "decay_regime_risk": "moderate (quarterly lag)", "data_needed": "股东户数 quarterly + 十大流通股东", "status": "shareholders_cache/ exists -> wire into a factor"},
-    {"id": "A4", "name": "Hot-money / dragon-tiger flow (龙虎榜/游资)", "economic_root": "Informed short-horizon order flow", "microcap_fit": "high (micro-caps are 游资 playground)", "decay_regime_risk": "moderate (crowding)", "data_needed": "龙虎榜 seats + individual fund-flow (NEW)", "status": "not acquired"},
-    {"id": "A5", "name": "Earnings preannouncement / PEAD (业绩预告/快报)", "economic_root": "Underreaction to fundamentals; sparse coverage -> slow diffusion", "microcap_fit": "high (near-zero analyst coverage)", "decay_regime_risk": "low", "data_needed": "业绩预告/快报 date+magnitude (NEW)", "status": "not acquired"},
-    {"id": "A6", "name": "Event catalysts (摘帽/回购/增持/重组/股权激励)", "economic_root": "Discrete value-relevant events", "microcap_fit": "high", "decay_regime_risk": "policy-dependent", "data_needed": "announcement event tables (NEW)", "status": "not acquired"},
-    {"id": "A7", "name": "Shell value / reverse-merger expectation", "economic_root": "Scarcity of listing slots", "microcap_fit": "historically high (drives S5)", "decay_regime_risk": "HIGH - decaying post-注册制 + delisting reform raises tail risk", "data_needed": "policy-regime flag + mcap + 重组 events", "status": "implicitly captured by S5; must be regime-gated"},
-    {"id": "A8", "name": "Quality-within-value / accruals / fraud screen", "economic_root": "Avoid value traps among cheap names", "microcap_fit": "high (micro-caps full of traps)", "decay_regime_risk": "low", "data_needed": "operating cashflow, goodwill, accruals, audit opinion (PARTIAL)", "status": "operating_cashflow_ttm added; need balance-sheet detail + 审计意见"},
-    {"id": "A9", "name": "Peer momentum / lead-lag / supply-chain", "economic_root": "Slow info diffusion across linked names", "microcap_fit": "moderate-high", "decay_regime_risk": "moderate (crowding)", "data_needed": "industry/concept tags (have) + optional graph", "status": "researched (research_loop/cross_sectional_alpha_research.md), not implemented"},
-    {"id": "A10","name": "Size premium", "economic_root": "Compensation for crash + illiquidity risk", "microcap_fit": "dominant but it is BETA not alpha", "decay_regime_risk": "HIGH tail (2024-01 crash)", "data_needed": "mcap (have)", "status": "over-relied upon -> needs neutralization/de-gross overlay"}
+    {
+      "id": "A1",
+      "name": "Short-term reversal / liquidity provision",
+      "economic_root": "Retail overreaction + illiquidity premium",
+      "microcap_fit": "very high (retail-dominated float)",
+      "decay_regime_risk": "low (capacity-limited, persistent)",
+      "data_needed": "OHLCV (have) + real amount/turnover",
+      "status": "underused (mom20d used as trend, not reversal)"
+    },
+    {
+      "id": "A2",
+      "name": "Lottery-demand avoidance (MAX / idio-vol / skew)",
+      "economic_root": "Retail gambling preference -> high-skew names overpriced",
+      "microcap_fit": "high",
+      "decay_regime_risk": "low (behavioral)",
+      "data_needed": "OHLCV (have: max_ret, ivol, ts_skew exist)",
+      "status": "operators exist, not assembled into a SHORT/avoid factor"
+    },
+    {
+      "id": "A3",
+      "name": "Shareholder concentration (户数减少/筹码集中)",
+      "economic_root": "Smart-money accumulation, float tightening",
+      "microcap_fit": "high, distinctive A-share signal",
+      "decay_regime_risk": "moderate (quarterly lag)",
+      "data_needed": "股东户数 quarterly + 十大流通股东",
+      "status": "shareholders_cache/ exists -> wire into a factor"
+    },
+    {
+      "id": "A4",
+      "name": "Hot-money / dragon-tiger flow (龙虎榜/游资)",
+      "economic_root": "Informed short-horizon order flow",
+      "microcap_fit": "high (micro-caps are 游资 playground)",
+      "decay_regime_risk": "moderate (crowding)",
+      "data_needed": "龙虎榜 seats + individual fund-flow (NEW)",
+      "status": "not acquired"
+    },
+    {
+      "id": "A5",
+      "name": "Earnings preannouncement / PEAD (业绩预告/快报)",
+      "economic_root": "Underreaction to fundamentals; sparse coverage -> slow diffusion",
+      "microcap_fit": "high (near-zero analyst coverage)",
+      "decay_regime_risk": "low",
+      "data_needed": "业绩预告/快报 date+magnitude (NEW)",
+      "status": "not acquired"
+    },
+    {
+      "id": "A6",
+      "name": "Event catalysts (摘帽/回购/增持/重组/股权激励)",
+      "economic_root": "Discrete value-relevant events",
+      "microcap_fit": "high",
+      "decay_regime_risk": "policy-dependent",
+      "data_needed": "announcement event tables (NEW)",
+      "status": "not acquired"
+    },
+    {
+      "id": "A7",
+      "name": "Shell value / reverse-merger expectation",
+      "economic_root": "Scarcity of listing slots",
+      "microcap_fit": "historically high (drives S5)",
+      "decay_regime_risk": "HIGH - decaying post-注册制 + delisting reform raises tail risk",
+      "data_needed": "policy-regime flag + mcap + 重组 events",
+      "status": "implicitly captured by S5; must be regime-gated"
+    },
+    {
+      "id": "A8",
+      "name": "Quality-within-value / accruals / fraud screen",
+      "economic_root": "Avoid value traps among cheap names",
+      "microcap_fit": "high (micro-caps full of traps)",
+      "decay_regime_risk": "low",
+      "data_needed": "operating cashflow, goodwill, accruals, audit opinion (PARTIAL)",
+      "status": "operating_cashflow_ttm added; need balance-sheet detail + 审计意见"
+    },
+    {
+      "id": "A9",
+      "name": "Peer momentum / lead-lag / supply-chain",
+      "economic_root": "Slow info diffusion across linked names",
+      "microcap_fit": "moderate-high",
+      "decay_regime_risk": "moderate (crowding)",
+      "data_needed": "industry/concept tags (have) + optional graph",
+      "status": "researched (research_loop/cross_sectional_alpha_research.md), not implemented"
+    },
+    {
+      "id": "A10",
+      "name": "Size premium",
+      "economic_root": "Compensation for crash + illiquidity risk",
+      "microcap_fit": "dominant but it is BETA not alpha",
+      "decay_regime_risk": "HIGH tail (2024-01 crash)",
+      "data_needed": "mcap (have)",
+      "status": "over-relied upon -> needs neutralization/de-gross overlay"
+    }
   ],
   "workstreams": [
     {
@@ -63,10 +207,64 @@
       "priority": "P0",
       "why_first": "Without survivorship-free universe, ADV-based impact, and multiple-testing discipline, every downstream Sharpe is fiction. This is the cheapest, highest-truth-yield work.",
       "tasks": [
-        {"id": "UA1", "title": "Point-in-time survivorship-free universe", "rationale": "Current 586-name universe is today's survivors; delisted/long-suspended micro-caps silently dropped -> the most dangerous bias in micro-cap.", "method": "Acquire delisted-name list + listing/delisting dates; build as-of universe membership per rebalance date; re-run all strategies; report the Sharpe delta.", "data_needed": "DS9 (delist list)", "expected_impact": "Likely -0.1 to -0.4 Sharpe and worse MDD; truth.", "effort": "2d", "deps": ["DS9"], "touch_points": ["data layer", "engine.py universe filter"]},
-        {"id": "UA2", "title": "ADV / square-root market-impact cost model + capacity cap", "rationale": "Flat 0.2% slippage is unrealistic for thin micro-caps.", "method": "impact_bps = k * sqrt(order_value / ADV_value); ADV from amount=close*volume; cap position at <= c% of 20d ADV; expose capacity_wan in result.", "data_needed": "amount/ADV (DS1)", "expected_impact": "Realistic net returns; flags low-capacity strategies.", "effort": "1.5d", "deps": ["DS1"], "touch_points": ["engine.py:411-424"]},
-        {"id": "UA3", "title": "Deflated Sharpe + trial accounting", "rationale": "19 strategies -> selection bias inflates the winner.", "method": "Implement Deflated Sharpe Ratio (Bailey & Lopez de Prado); record n_trials; haircut reported Sharpe; add to validators.", "data_needed": "none", "expected_impact": "Honest significance; kills false winners.", "effort": "0.5d", "deps": [], "touch_points": ["research_loop/validators.py"]},
-        {"id": "UA4", "title": "Start-date / regime robustness harness", "rationale": "S1/S3 ran 1-2 months; numbers swing with start date.", "method": "Run rolling-start backtests (e.g., every quarter start), report distribution of annual/Sharpe/MDD; flag strategies that only survive lucky starts.", "data_needed": "none", "expected_impact": "Separates robust edges from start-luck.", "effort": "1d", "deps": [], "touch_points": ["run.py", "engine.py robust_start_check"]}
+        {
+          "id": "UA1",
+          "title": "Point-in-time survivorship-free universe",
+          "rationale": "Current 586-name universe is today's survivors; delisted/long-suspended micro-caps silently dropped -> the most dangerous bias in micro-cap.",
+          "method": "Acquire delisted-name list + listing/delisting dates; build as-of universe membership per rebalance date; re-run all strategies; report the Sharpe delta.",
+          "data_needed": "DS9 (delist list)",
+          "expected_impact": "Likely -0.1 to -0.4 Sharpe and worse MDD; truth.",
+          "effort": "2d",
+          "deps": [
+            "DS9"
+          ],
+          "touch_points": [
+            "data layer",
+            "engine.py universe filter"
+          ]
+        },
+        {
+          "id": "UA2",
+          "title": "ADV / square-root market-impact cost model + capacity cap",
+          "rationale": "Flat 0.2% slippage is unrealistic for thin micro-caps.",
+          "method": "impact_bps = k * sqrt(order_value / ADV_value); ADV from amount=close*volume; cap position at <= c% of 20d ADV; expose capacity_wan in result.",
+          "data_needed": "amount/ADV (DS1)",
+          "expected_impact": "Realistic net returns; flags low-capacity strategies.",
+          "effort": "1.5d",
+          "deps": [
+            "DS1"
+          ],
+          "touch_points": [
+            "engine.py:411-424"
+          ]
+        },
+        {
+          "id": "UA3",
+          "title": "Deflated Sharpe + trial accounting",
+          "rationale": "19 strategies -> selection bias inflates the winner.",
+          "method": "Implement Deflated Sharpe Ratio (Bailey & Lopez de Prado); record n_trials; haircut reported Sharpe; add to validators.",
+          "data_needed": "none",
+          "expected_impact": "Honest significance; kills false winners.",
+          "effort": "0.5d",
+          "deps": [],
+          "touch_points": [
+            "research_loop/validators.py"
+          ]
+        },
+        {
+          "id": "UA4",
+          "title": "Start-date / regime robustness harness",
+          "rationale": "S1/S3 ran 1-2 months; numbers swing with start date.",
+          "method": "Run rolling-start backtests (e.g., every quarter start), report distribution of annual/Sharpe/MDD; flag strategies that only survive lucky starts.",
+          "data_needed": "none",
+          "expected_impact": "Separates robust edges from start-luck.",
+          "effort": "1d",
+          "deps": [],
+          "touch_points": [
+            "run.py",
+            "engine.py robust_start_check"
+          ]
+        }
       ]
     },
     {
@@ -75,11 +273,56 @@
       "priority": "P0-P1",
       "why": "Current data = OHLCV + quarterly financials + total shares. The highest-quality untapped micro-cap alphas (A3-A6, A8) are gated on data we do not yet have. See data_acquisition_catalog.",
       "tasks": [
-        {"id": "UB1", "title": "Real amount + free-float turnover", "rationale": "Liquidity factors (A1) and the impact model (UA2) need real 成交额/换手率, not 量比.", "data_needed": "DS1", "expected_impact": "Enables reversal/liquidity factors + realistic costs.", "effort": "0.5d", "priority": "P0", "deps": []},
-        {"id": "UB2", "title": "Shareholder-structure panel (户数/十大流通股东)", "rationale": "A3 concentration alpha; shareholders_cache/ already exists -> finish coverage + derive 户数环比.", "data_needed": "DS3", "expected_impact": "New decorrelated factor.", "effort": "1d", "priority": "P1", "deps": []},
-        {"id": "UB3", "title": "Dragon-tiger + fund-flow", "rationale": "A4 hot-money flow.", "data_needed": "DS2", "expected_impact": "Short-horizon micro-cap signal.", "effort": "1.5d", "priority": "P1", "deps": []},
-        {"id": "UB4", "title": "Event tables (业绩预告/快报, 摘帽, 增持/回购, 重组, 解禁)", "rationale": "A5/A6 event-driven alpha + A7 regime gating.", "data_needed": "DS4,DS5,DS6", "expected_impact": "Event factors; lockup-expiry de-risk.", "effort": "2d", "priority": "P1", "deps": []},
-        {"id": "UB5", "title": "Balance-sheet detail + audit opinion (商誉/货币资金/应收/审计意见)", "rationale": "A8 value-trap / fraud screen.", "data_needed": "DS7,DS8", "expected_impact": "Filters value traps; lifts deep-value Sharpe.", "effort": "1.5d", "priority": "P2", "deps": []}
+        {
+          "id": "UB1",
+          "title": "Real amount + free-float turnover",
+          "rationale": "Liquidity factors (A1) and the impact model (UA2) need real 成交额/换手率, not 量比.",
+          "data_needed": "DS1",
+          "expected_impact": "Enables reversal/liquidity factors + realistic costs.",
+          "effort": "0.5d",
+          "priority": "P0",
+          "deps": []
+        },
+        {
+          "id": "UB2",
+          "title": "Shareholder-structure panel (户数/十大流通股东)",
+          "rationale": "A3 concentration alpha; shareholders_cache/ already exists -> finish coverage + derive 户数环比.",
+          "data_needed": "DS3",
+          "expected_impact": "New decorrelated factor.",
+          "effort": "1d",
+          "priority": "P1",
+          "deps": []
+        },
+        {
+          "id": "UB3",
+          "title": "Dragon-tiger + fund-flow",
+          "rationale": "A4 hot-money flow.",
+          "data_needed": "DS2",
+          "expected_impact": "Short-horizon micro-cap signal.",
+          "effort": "1.5d",
+          "priority": "P1",
+          "deps": []
+        },
+        {
+          "id": "UB4",
+          "title": "Event tables (业绩预告/快报, 摘帽, 增持/回购, 重组, 解禁)",
+          "rationale": "A5/A6 event-driven alpha + A7 regime gating.",
+          "data_needed": "DS4,DS5,DS6",
+          "expected_impact": "Event factors; lockup-expiry de-risk.",
+          "effort": "2d",
+          "priority": "P1",
+          "deps": []
+        },
+        {
+          "id": "UB5",
+          "title": "Balance-sheet detail + audit opinion (商誉/货币资金/应收/审计意见)",
+          "rationale": "A8 value-trap / fraud screen.",
+          "data_needed": "DS7,DS8",
+          "expected_impact": "Filters value traps; lifts deep-value Sharpe.",
+          "effort": "1.5d",
+          "priority": "P2",
+          "deps": []
+        }
       ]
     },
     {
@@ -88,12 +331,98 @@
       "priority": "P1",
       "ordered_by_roi_for_this_codebase": true,
       "tasks": [
-        {"id": "UC1", "title": "Standardize + cross-sectional neutralization pipeline", "rationale": "Raw factors let SIZE dominate everything -> all strategies collapse onto the same crash-prone bet. Prerequisite for honest factor evaluation.", "method": "Per-date pipeline: winsorize -> z-score/rank -> residualize against size+industry (group_rank/scale operators exist) -> combine. Apply to ALL factors before ranking.", "expected_impact": "Decorrelates factors; reveals true non-size alpha.", "effort": "1.5d", "priority": "P1", "deps": [], "touch_points": ["factors/operators.py", "factors/templates.py"]},
-        {"id": "UC2", "title": "Symbolic / genetic factor search (gplearn / alphagen-style)", "rationale": "16 operators already exist; search their composition space for formulaic alphas (WorldQuant-style). CPU-feasible, interpretable, highest discovery ROI.", "method": "Define operator/terminal set from factors/operators.py; fitness = IC-IR (penalize turnover + complexity for decay-resistance, cf. AlphaAgent); evolve; validate survivors on walk-forward; orthogonalize vs existing.", "expected_impact": "Net-new formulaic factors with positive IC-IR.", "effort": "3d", "priority": "P1", "deps": ["UC1"], "touch_points": ["new factors/search.py"]},
-        {"id": "UC3", "title": "Factor-zoo evaluation + selection harness", "rationale": "engine already computes ic_mean, ic_ir, ic_decay, quantile_spread, factor_decay_halflife -> wire into a batch evaluator.", "method": "Run candidate library through IC/IC-IR/decay/quantile-spread; keep stable + decorrelated (|corr|<0.6) factors; combine by IC-weight or max-IR.", "expected_impact": "Systematic, repeatable selection; avoids ad-hoc.", "effort": "1d", "priority": "P1", "deps": ["UC1"], "touch_points": ["research_loop/validators.py", "engine.py"]},
-        {"id": "UC4", "title": "Event-study factors (SUE / CAR)", "rationale": "Turn event tables into standardized surprise factors.", "method": "From DS4/DS5: standardized earnings surprise (SUE), event CAR, days-since-event decay; cross-sectional rank.", "expected_impact": "A5/A6 alpha, low correlation to price factors.", "effort": "1.5d", "priority": "P2", "deps": ["UB4"], "touch_points": ["new factors/events.py"]},
-        {"id": "UC5", "title": "Conditional / interaction factors", "rationale": "Micro-cap mispricing is conditional (regime, sentiment, liquidity).", "method": "factor x regime, factor x turnover(sentiment proxy), factor x liquidity bucket; template_sentiment_conditional/regime_momentum exist -> generalize.", "expected_impact": "Higher conditional IC; regime robustness.", "effort": "1d", "priority": "P2", "deps": ["UC1"], "touch_points": ["factors/templates.py"]},
-        {"id": "UC6", "title": "LLM-assisted hypothesis -> formula (AlphaAgent pattern)", "rationale": "Economic-hypothesis-first generation resists overfitting; already in roadmap.json literature.", "method": "LLM proposes economic hypothesis -> translate to formulaic factor over operator set -> validate via UC3 harness; strict trial accounting (feeds UA3).", "expected_impact": "Idea throughput with overfit guardrails.", "effort": "2d", "priority": "P3", "deps": ["UC3"], "touch_points": ["research_loop/loop.py"]}
+        {
+          "id": "UC1",
+          "title": "Standardize + cross-sectional neutralization pipeline",
+          "rationale": "Raw factors let SIZE dominate everything -> all strategies collapse onto the same crash-prone bet. Prerequisite for honest factor evaluation.",
+          "method": "Per-date pipeline: winsorize -> z-score/rank -> residualize against size+industry (group_rank/scale operators exist) -> combine. Apply to ALL factors before ranking.",
+          "expected_impact": "Decorrelates factors; reveals true non-size alpha.",
+          "effort": "1.5d",
+          "priority": "P1",
+          "deps": [],
+          "touch_points": [
+            "factors/operators.py",
+            "factors/templates.py"
+          ]
+        },
+        {
+          "id": "UC2",
+          "title": "Symbolic / genetic factor search (gplearn / alphagen-style)",
+          "rationale": "16 operators already exist; search their composition space for formulaic alphas (WorldQuant-style). CPU-feasible, interpretable, highest discovery ROI.",
+          "method": "Define operator/terminal set from factors/operators.py; fitness = IC-IR (penalize turnover + complexity for decay-resistance, cf. AlphaAgent); evolve; validate survivors on walk-forward; orthogonalize vs existing.",
+          "expected_impact": "Net-new formulaic factors with positive IC-IR.",
+          "effort": "3d",
+          "priority": "P1",
+          "deps": [
+            "UC1"
+          ],
+          "touch_points": [
+            "new factors/search.py"
+          ]
+        },
+        {
+          "id": "UC3",
+          "title": "Factor-zoo evaluation + selection harness",
+          "rationale": "engine already computes ic_mean, ic_ir, ic_decay, quantile_spread, factor_decay_halflife -> wire into a batch evaluator.",
+          "method": "Run candidate library through IC/IC-IR/decay/quantile-spread; keep stable + decorrelated (|corr|<0.6) factors; combine by IC-weight or max-IR.",
+          "expected_impact": "Systematic, repeatable selection; avoids ad-hoc.",
+          "effort": "1d",
+          "priority": "P1",
+          "deps": [
+            "UC1"
+          ],
+          "touch_points": [
+            "research_loop/validators.py",
+            "engine.py"
+          ],
+          "status": "done",
+          "status_note": "Delivered: factor_report.py wires FactorZooEvaluator over full FACTOR_REGISTRY -> IC table + corr matrix + decorrelated IC-weighted composite, persisted JSON/CSV (f15002e)."
+        },
+        {
+          "id": "UC4",
+          "title": "Event-study factors (SUE / CAR)",
+          "rationale": "Turn event tables into standardized surprise factors.",
+          "method": "From DS4/DS5: standardized earnings surprise (SUE), event CAR, days-since-event decay; cross-sectional rank.",
+          "expected_impact": "A5/A6 alpha, low correlation to price factors.",
+          "effort": "1.5d",
+          "priority": "P2",
+          "deps": [
+            "UB4"
+          ],
+          "touch_points": [
+            "new factors/events.py"
+          ]
+        },
+        {
+          "id": "UC5",
+          "title": "Conditional / interaction factors",
+          "rationale": "Micro-cap mispricing is conditional (regime, sentiment, liquidity).",
+          "method": "factor x regime, factor x turnover(sentiment proxy), factor x liquidity bucket; template_sentiment_conditional/regime_momentum exist -> generalize.",
+          "expected_impact": "Higher conditional IC; regime robustness.",
+          "effort": "1d",
+          "priority": "P2",
+          "deps": [
+            "UC1"
+          ],
+          "touch_points": [
+            "factors/templates.py"
+          ]
+        },
+        {
+          "id": "UC6",
+          "title": "LLM-assisted hypothesis -> formula (AlphaAgent pattern)",
+          "rationale": "Economic-hypothesis-first generation resists overfitting; already in roadmap.json literature.",
+          "method": "LLM proposes economic hypothesis -> translate to formulaic factor over operator set -> validate via UC3 harness; strict trial accounting (feeds UA3).",
+          "expected_impact": "Idea throughput with overfit guardrails.",
+          "effort": "2d",
+          "priority": "P3",
+          "deps": [
+            "UC3"
+          ],
+          "touch_points": [
+            "research_loop/loop.py"
+          ]
+        }
       ]
     },
     {
@@ -102,25 +431,214 @@
       "priority": "P0-P1",
       "note": "Several of these lift Sharpe/Calmar WITHOUT new alpha and directly attack the -50% MDD binding constraint.",
       "tasks": [
-        {"id": "UD1", "title": "Risk overlay: vol-targeting + regime de-gross + max-DD throttle", "rationale": "The binding constraint is drawdown. The 2024-01 micro-cap crash (-30% in weeks) is the existential risk.", "method": "Scale gross exposure to target portfolio vol; de-gross when breadth collapses or micro-cap index < MA (crash filter); cut gross on rolling-DD breach. Distinct from per-name stop_loss (already daily).", "expected_impact": "MDD from ~-50% toward <-30%; Calmar up materially.", "effort": "2d", "priority": "P0", "deps": [], "touch_points": ["engine.py"]},
-        {"id": "UD2", "title": "Portfolio construction beyond top-N equal-weight", "rationale": "Equal-weight top-N ignores risk; concentration drives MDD.", "method": "IC-weighted or risk-parity or constrained MVO; single-name cap (e.g., <=8%) + industry cap; integrate ADV cap from UA2.", "expected_impact": "Higher IR at same alpha; lower concentration risk.", "effort": "1.5d", "priority": "P1", "deps": ["UA2"], "touch_points": ["engine.py position sizing"]},
-        {"id": "UD3", "title": "Ensemble of DEcorrelated alphas", "rationale": "Current 'ensemble' template blends correlated momentum factors -> Sharpe 0.15. Real diversification needs low-correlation sources.", "method": "Combine reversal(A1/A2) + concentration(A3) + event(A5) + quality-value(A8); IC-weight; require pairwise |corr|<0.6.", "expected_impact": "Portfolio IR > any single factor; smoother equity curve.", "effort": "1d", "priority": "P1", "deps": ["UC3", "UD2"], "touch_points": ["strategies_v2.py"]},
-        {"id": "UD4", "title": "Walk-forward + purged/embargoed CV, single-use test set", "rationale": "Prevent leakage; enforce honest OOS. walk_forward.py + walk_forward_validation_split exist -> enforce discipline.", "method": "Purged K-fold with embargo gap; freeze test period (2025-2026) for single final eval; log every test access.", "expected_impact": "Trustworthy OOS estimate.", "effort": "1d", "priority": "P1", "deps": [], "touch_points": ["research_loop/walk_forward.py", "research_loop/validators.py"]},
-        {"id": "UD5", "title": "Online/rolling factor-weight refit (SGD)", "rationale": "Micro-cap alpha decays 6-12m; static weights stale. Researched in ml_factor_mining_research.md.", "method": "SGDRegressor.partial_fit on rolling window; L2 reg; refit weights quarterly; combine with UC3 selection.", "expected_impact": "Adapts to decay; +0.1-0.3 Sharpe per prior research.", "effort": "1.5d", "priority": "P2", "deps": ["UC3"], "touch_points": ["new ml_models.py"]}
+        {
+          "id": "UD1",
+          "title": "Risk overlay: vol-targeting + regime de-gross + max-DD throttle",
+          "rationale": "The binding constraint is drawdown. The 2024-01 micro-cap crash (-30% in weeks) is the existential risk.",
+          "method": "Scale gross exposure to target portfolio vol; de-gross when breadth collapses or micro-cap index < MA (crash filter); cut gross on rolling-DD breach. Distinct from per-name stop_loss (already daily).",
+          "expected_impact": "MDD from ~-50% toward <-30%; Calmar up materially.",
+          "effort": "2d",
+          "priority": "P0",
+          "deps": [],
+          "touch_points": [
+            "engine.py"
+          ]
+        },
+        {
+          "id": "UD2",
+          "title": "Portfolio construction beyond top-N equal-weight",
+          "rationale": "Equal-weight top-N ignores risk; concentration drives MDD.",
+          "method": "IC-weighted or risk-parity or constrained MVO; single-name cap (e.g., <=8%) + industry cap; integrate ADV cap from UA2.",
+          "expected_impact": "Higher IR at same alpha; lower concentration risk.",
+          "effort": "1.5d",
+          "priority": "P1",
+          "deps": [
+            "UA2"
+          ],
+          "touch_points": [
+            "engine.py position sizing"
+          ]
+        },
+        {
+          "id": "UD3",
+          "title": "Ensemble of DEcorrelated alphas",
+          "rationale": "Current 'ensemble' template blends correlated momentum factors -> Sharpe 0.15. Real diversification needs low-correlation sources.",
+          "method": "Combine reversal(A1/A2) + concentration(A3) + event(A5) + quality-value(A8); IC-weight; require pairwise |corr|<0.6.",
+          "expected_impact": "Portfolio IR > any single factor; smoother equity curve.",
+          "effort": "1d",
+          "priority": "P1",
+          "deps": [
+            "UC3",
+            "UD2"
+          ],
+          "touch_points": [
+            "strategies_v2.py"
+          ],
+          "status": "done",
+          "status_note": "Delivered: factors/combiner.py combine_factors() — greedy decorrelation (|corr|<max_corr) + IC-sign-aligned + equal/ic/ic_ir weighting composite; make_composite_strategy_def() no-lookahead ranking_fn; 15 tests (f15002e)."
+        },
+        {
+          "id": "UD4",
+          "title": "Walk-forward + purged/embargoed CV, single-use test set",
+          "rationale": "Prevent leakage; enforce honest OOS. walk_forward.py + walk_forward_validation_split exist -> enforce discipline.",
+          "method": "Purged K-fold with embargo gap; freeze test period (2025-2026) for single final eval; log every test access.",
+          "expected_impact": "Trustworthy OOS estimate.",
+          "effort": "1d",
+          "priority": "P1",
+          "deps": [],
+          "touch_points": [
+            "research_loop/walk_forward.py",
+            "research_loop/validators.py"
+          ]
+        },
+        {
+          "id": "UD5",
+          "title": "Online/rolling factor-weight refit (SGD)",
+          "rationale": "Micro-cap alpha decays 6-12m; static weights stale. Researched in ml_factor_mining_research.md.",
+          "method": "SGDRegressor.partial_fit on rolling window; L2 reg; refit weights quarterly; combine with UC3 selection.",
+          "expected_impact": "Adapts to decay; +0.1-0.3 Sharpe per prior research.",
+          "effort": "1.5d",
+          "priority": "P2",
+          "deps": [
+            "UC3"
+          ],
+          "touch_points": [
+            "new ml_models.py"
+          ]
+        }
       ]
     }
   ],
   "data_acquisition_catalog": [
-    {"id": "DS1", "dataset": "Daily amount + turnover_rate + free-float shares", "fields": ["amount(成交额)", "turnover_rate(换手率)", "float_shares(流通股本)", "float_mcap(流通市值)"], "candidate_source": "akshare stock_zh_a_hist (东财, has 换手率/成交额); stock_individual_info_em (流通股)", "alpha_use": "A1 liquidity/reversal, ADV impact model (UA2), real sentiment proxy", "priority": "P0", "verify": "confirm field names/units before wiring"},
-    {"id": "DS2", "dataset": "Dragon-tiger + individual fund-flow", "fields": ["龙虎榜 buy/sell seats", "主力净流入", "超大单/大单净额"], "candidate_source": "akshare stock_lhb_detail_em, stock_individual_fund_flow", "alpha_use": "A4 hot-money flow", "priority": "P1"},
-    {"id": "DS3", "dataset": "Shareholder structure", "fields": ["股东户数", "户数环比", "十大流通股东持股变化", "机构持股比例"], "candidate_source": "akshare stock_zh_a_gdhs / stock_zh_a_gdhs_detail_em; existing shareholders_cache/", "alpha_use": "A3 concentration alpha", "priority": "P1"},
-    {"id": "DS4", "dataset": "Earnings preannouncement / express", "fields": ["业绩预告 type+预告净利润区间", "业绩快报 净利润/营收", "公告日"], "candidate_source": "akshare stock_yjyg_em (预告), stock_yjkb_em (快报)", "alpha_use": "A5 PEAD / SUE factor", "priority": "P1"},
-    {"id": "DS5", "dataset": "Corporate event announcements", "fields": ["摘帽/ST变更", "回购", "股东增减持", "资产重组", "股权激励"], "candidate_source": "akshare (stock_em_* event endpoints), cninfo announcements", "alpha_use": "A6 event catalysts, A7 shell-value gating", "priority": "P1"},
-    {"id": "DS6", "dataset": "Lockup-expiry calendar (解禁)", "fields": ["解禁日", "解禁股数", "解禁市值占比"], "candidate_source": "akshare stock_restricted_release_queue_em", "alpha_use": "negative event de-risk overlay", "priority": "P2"},
-    {"id": "DS7", "dataset": "Balance-sheet detail", "fields": ["商誉", "货币资金", "应收账款", "有息负债", "经营现金流"], "candidate_source": "akshare balance-sheet/cashflow EM endpoints", "alpha_use": "A8 accruals + value-trap screen", "priority": "P2"},
-    {"id": "DS8", "dataset": "Audit opinion + fraud red-flags", "fields": ["审计意见类型(非标=red flag)", "关联交易", "Beneish M-score inputs"], "candidate_source": "akshare/THS financial abstract", "alpha_use": "A8 fraud screen (exclude)", "priority": "P2"},
-    {"id": "DS9", "dataset": "Delisted / point-in-time universe", "fields": ["退市股票列表", "上市日", "退市日", "停牌历史"], "candidate_source": "akshare stock_info_sh_delist / stock_info_sz_delist + listing dates", "alpha_use": "UA1 survivorship-free backtest (CREDIBILITY)", "priority": "P0"},
-    {"id": "DS10", "dataset": "Intraday open/close-auction (optional)", "fields": ["开盘集合竞价", "分钟/VWAP"], "candidate_source": "westock-data / akshare minute", "alpha_use": "overnight_reversal template real inputs, VWAP execution", "priority": "P3"}
+    {
+      "id": "DS1",
+      "dataset": "Daily amount + turnover_rate + free-float shares",
+      "fields": [
+        "amount(成交额)",
+        "turnover_rate(换手率)",
+        "float_shares(流通股本)",
+        "float_mcap(流通市值)"
+      ],
+      "candidate_source": "akshare stock_zh_a_hist (东财, has 换手率/成交额); stock_individual_info_em (流通股)",
+      "alpha_use": "A1 liquidity/reversal, ADV impact model (UA2), real sentiment proxy",
+      "priority": "P0",
+      "verify": "confirm field names/units before wiring"
+    },
+    {
+      "id": "DS2",
+      "dataset": "Dragon-tiger + individual fund-flow",
+      "fields": [
+        "龙虎榜 buy/sell seats",
+        "主力净流入",
+        "超大单/大单净额"
+      ],
+      "candidate_source": "akshare stock_lhb_detail_em, stock_individual_fund_flow",
+      "alpha_use": "A4 hot-money flow",
+      "priority": "P1"
+    },
+    {
+      "id": "DS3",
+      "dataset": "Shareholder structure",
+      "fields": [
+        "股东户数",
+        "户数环比",
+        "十大流通股东持股变化",
+        "机构持股比例"
+      ],
+      "candidate_source": "akshare stock_zh_a_gdhs / stock_zh_a_gdhs_detail_em; existing shareholders_cache/",
+      "alpha_use": "A3 concentration alpha",
+      "priority": "P1",
+      "status": "partial",
+      "status_note": "Delivered: data/shareholders.py akshare 股东户数 provider + incremental parquet cache + as-of merge into panel `shareholders` (un-proxies F003); 12 tests (a20c55e). Remaining: 十大流通股东 detail."
+    },
+    {
+      "id": "DS4",
+      "dataset": "Earnings preannouncement / express",
+      "fields": [
+        "业绩预告 type+预告净利润区间",
+        "业绩快报 净利润/营收",
+        "公告日"
+      ],
+      "candidate_source": "akshare stock_yjyg_em (预告), stock_yjkb_em (快报)",
+      "alpha_use": "A5 PEAD / SUE factor",
+      "priority": "P1"
+    },
+    {
+      "id": "DS5",
+      "dataset": "Corporate event announcements",
+      "fields": [
+        "摘帽/ST变更",
+        "回购",
+        "股东增减持",
+        "资产重组",
+        "股权激励"
+      ],
+      "candidate_source": "akshare (stock_em_* event endpoints), cninfo announcements",
+      "alpha_use": "A6 event catalysts, A7 shell-value gating",
+      "priority": "P1"
+    },
+    {
+      "id": "DS6",
+      "dataset": "Lockup-expiry calendar (解禁)",
+      "fields": [
+        "解禁日",
+        "解禁股数",
+        "解禁市值占比"
+      ],
+      "candidate_source": "akshare stock_restricted_release_queue_em",
+      "alpha_use": "negative event de-risk overlay",
+      "priority": "P2"
+    },
+    {
+      "id": "DS7",
+      "dataset": "Balance-sheet detail",
+      "fields": [
+        "商誉",
+        "货币资金",
+        "应收账款",
+        "有息负债",
+        "经营现金流"
+      ],
+      "candidate_source": "akshare balance-sheet/cashflow EM endpoints",
+      "alpha_use": "A8 accruals + value-trap screen",
+      "priority": "P2"
+    },
+    {
+      "id": "DS8",
+      "dataset": "Audit opinion + fraud red-flags",
+      "fields": [
+        "审计意见类型(非标=red flag)",
+        "关联交易",
+        "Beneish M-score inputs"
+      ],
+      "candidate_source": "akshare/THS financial abstract",
+      "alpha_use": "A8 fraud screen (exclude)",
+      "priority": "P2"
+    },
+    {
+      "id": "DS9",
+      "dataset": "Delisted / point-in-time universe",
+      "fields": [
+        "退市股票列表",
+        "上市日",
+        "退市日",
+        "停牌历史"
+      ],
+      "candidate_source": "akshare stock_info_sh_delist / stock_info_sz_delist + listing dates",
+      "alpha_use": "UA1 survivorship-free backtest (CREDIBILITY)",
+      "priority": "P0"
+    },
+    {
+      "id": "DS10",
+      "dataset": "Intraday open/close-auction (optional)",
+      "fields": [
+        "开盘集合竞价",
+        "分钟/VWAP"
+      ],
+      "candidate_source": "westock-data / akshare minute",
+      "alpha_use": "overnight_reversal template real inputs, VWAP execution",
+      "priority": "P3"
+    }
   ],
   "dependencies": {
     "WS-A before headline claims": "UA1+UA2+UA3 gate any deployable Sharpe statement",
@@ -140,5 +658,20 @@
     "P1 (week 3-5): UC1, UC3, UB2/UB3/UB4 (DS3/DS2/DS4-5), UC2, UD2, UD4 -> new decorrelated factors + honest OOS",
     "P1-P2 (week 6-7): UD3, UC4, UC5, UD5, UB5 -> ensemble + adaptivity",
     "P3 (backlog): UC6, DS10 -> LLM idea throughput, intraday"
+  ],
+  "progress_log": [
+    {
+      "date": "2026-07-01",
+      "session": "phase2-backtest-enhancement",
+      "delivered": [
+        "UD3 decorrelated IC-weighted factor combiner (factors/combiner.py) + factor_report.py + composite strategy (f15002e)",
+        "UC3 factor-zoo report harness wired + persisted (f15002e)",
+        "Factor library 30 -> 36: F031 52wk-high(George-Hwang), F032 seasonality(Heston-Sadka), F033 downside-beta(Ang-Chen-Xing), F034 info-discreteness(Da-Gurun-Warachka), F035 prospect-theory(Barberis), F036 max-drawdown; all |corr|<0.4 vs nearest existing (af69d5a)",
+        "DS3/UB2 shareholder count real free data + persistence + as-of merge, un-proxies F003 (a20c55e)",
+        "compute_all_factors opt-in log_errors hardening (af69d5a)"
+      ],
+      "validation": "131 tests pass (test_factors_p0..p4 + operators + shareholders), zero regression; workbuddy env (Py3.13).",
+      "still_top_pending": "WS-A credibility (UA1 PIT-universe, UA2 ADV-impact, UD1 risk-overlay) implemented in data/ but wired ONLY into p0_engine_v2.py, NOT canonical engine.py/run.py — remains the #1 gap to make the number real."
+    }
   ]
 }

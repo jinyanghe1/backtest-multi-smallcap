@@ -1,7 +1,7 @@
 {
-  "project": "backtest_mvp Factor Library (30+ Alpha Factors)",
-  "version": "v1.0",
-  "date": "2026-06-27",
+  "project": "backtest_mvp Factor Library (36 Alpha Factors)",
+  "version": "v1.1",
+  "date": "2026-07-01",
   "source_papers": [
     "Kakushadze (2016) - 101 Formulaic Alphas",
     "Li et al. (2023) - Replicating and Digesting Anomalies in Chinese A-share Market",
@@ -39,7 +39,10 @@
       "id": "F001",
       "name": "短期反转(成交量加权)",
       "category": "反转/动量",
-      "source_papers": ["Jegadeesh & Titman (1993)", "Hong & Stein (1999)"],
+      "source_papers": [
+        "Jegadeesh & Titman (1993)",
+        "Hong & Stein (1999)"
+      ],
       "a_share_validation": "强 (A股散户主导，过度反应显著)",
       "definition": {
         "formula": "-rank(ts_mean(ret_20d * volume_20d, 20) / ts_mean(volume_20d, 20))",
@@ -47,8 +50,14 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.03 - 0.06"
       },
-      "required_fields": ["close", "volume"],
-      "derived_fields": ["ret_20d", "volume_20d"],
+      "required_fields": [
+        "close",
+        "volume"
+      ],
+      "derived_fields": [
+        "ret_20d",
+        "volume_20d"
+      ],
       "calculation": {
         "steps": [
           "1. 计算20日收益率 ret_20d = (close / delay(close,20)) - 1",
@@ -79,7 +88,10 @@
       "id": "F002",
       "name": "彩票偏好规避",
       "category": "行为金融/散户",
-      "source_papers": ["Bali et al. (2011)", "Stambaugh et al. (2012)"],
+      "source_papers": [
+        "Bali et al. (2011)",
+        "Stambaugh et al. (2012)"
+      ],
       "a_share_validation": "强 (A股散户彩票偏好显著)",
       "definition": {
         "formula": "-(MAX_20d / VOL_20d * 0.5 + rank(ivol_20d) * 0.3 + rank(skew_20d) * 0.2)",
@@ -87,8 +99,17 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.02 - 0.04"
       },
-      "required_fields": ["high", "low", "close", "volume"],
-      "derived_fields": ["MAX_20d", "ivol_20d", "skew_20d"],
+      "required_fields": [
+        "high",
+        "low",
+        "close",
+        "volume"
+      ],
+      "derived_fields": [
+        "MAX_20d",
+        "ivol_20d",
+        "skew_20d"
+      ],
       "calculation": {
         "steps": [
           "1. MAX_20d = ts_max(high/close - 1, 20)  # 20日内最大日收益",
@@ -111,14 +132,19 @@
         "test_high_max_underperform: MAX前20%组合未来收益 < MAX后20%"
       ],
       "priority": "P0",
-      "dependencies": ["F001"],
+      "dependencies": [
+        "F001"
+      ],
       "estimated_effort": "1.5h"
     },
     {
       "id": "F003",
       "name": "股东集中度",
       "category": "行为金融/机构",
-      "source_papers": ["Campbell et al. (2008)", "中国A股筹码集中度研究"],
+      "source_papers": [
+        "Campbell et al. (2008)",
+        "中国A股筹码集中度研究"
+      ],
       "a_share_validation": "中(数据可得性受限)",
       "definition": {
         "formula": "-pct_change(shareholders, 1q) 或 -turnover_rank + ret_20d_rank * 0.5",
@@ -126,9 +152,18 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.02 - 0.03"
       },
-      "required_fields": ["shareholders"],
-      "fallback_fields": ["volume", "close"],
-      "derived_fields": ["shareholder_change", "turnover_rank", "ret_20d_rank"],
+      "required_fields": [
+        "shareholders"
+      ],
+      "fallback_fields": [
+        "volume",
+        "close"
+      ],
+      "derived_fields": [
+        "shareholder_change",
+        "turnover_rank",
+        "ret_20d_rank"
+      ],
       "calculation": {
         "steps": [
           "PRIMARY: 1. 获取季度股东户数 shareholders",
@@ -160,7 +195,10 @@
       "id": "F004",
       "name": "收益加速(PEAD)",
       "category": "盈利动量",
-      "source_papers": ["Ball & Brown (1968)", "PEAD in China"],
+      "source_papers": [
+        "Ball & Brown (1968)",
+        "PEAD in China"
+      ],
       "a_share_validation": "中(季报披露后漂移显著但窗口短)",
       "definition": {
         "formula": "ret_5d / (abs(ret_20d) + 0.01) - 1",
@@ -168,8 +206,13 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.02 - 0.04"
       },
-      "required_fields": ["close"],
-      "derived_fields": ["ret_5d", "ret_20d"],
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "ret_5d",
+        "ret_20d"
+      ],
       "calculation": {
         "steps": [
           "1. ret_5d = (close / delay(close,5)) - 1",
@@ -190,14 +233,19 @@
         "test_corr_with_momentum: |corr(F004, mom20d)| < 0.6 # 与纯动量不同"
       ],
       "priority": "P1",
-      "dependencies": ["F001"],
+      "dependencies": [
+        "F001"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F005",
       "name": "质量价值",
       "category": "质量",
-      "source_papers": ["Novy-Marx (2013)", "Ball et al. (2016)"],
+      "source_papers": [
+        "Novy-Marx (2013)",
+        "Ball et al. (2016)"
+      ],
       "a_share_validation": "中(质量因子在A股有效但弱于美股)",
       "definition": {
         "formula": "-pb + operating_cashflow/mcap * 0.3",
@@ -205,9 +253,16 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.015 - 0.025"
       },
-      "required_fields": ["pb", "operating_cashflow"],
-      "fallback_fields": ["pb"],
-      "derived_fields": ["ocf_mcap_ratio"],
+      "required_fields": [
+        "pb",
+        "operating_cashflow"
+      ],
+      "fallback_fields": [
+        "pb"
+      ],
+      "derived_fields": [
+        "ocf_mcap_ratio"
+      ],
       "calculation": {
         "steps": [
           "PRIMARY: 1. ocf_mcap = operating_cashflow / mcap",
@@ -236,7 +291,10 @@
       "id": "F006",
       "name": "特质波动率异象",
       "category": "波动率",
-      "source_papers": ["Ang et al. (2006)", "Blitz & van Vliet (2007)"],
+      "source_papers": [
+        "Ang et al. (2006)",
+        "Blitz & van Vliet (2007)"
+      ],
       "a_share_validation": "强(高ivol股票未来收益低)",
       "definition": {
         "formula": "-rank(std(residuals from market regression, 20))",
@@ -244,8 +302,13 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.03 - 0.05"
       },
-      "required_fields": ["close", "market_index"],
-      "derived_fields": ["ivol_20d"],
+      "required_fields": [
+        "close",
+        "market_index"
+      ],
+      "derived_fields": [
+        "ivol_20d"
+      ],
       "calculation": {
         "steps": [
           "1. 日收益 ret = close / delay(close,1) - 1",
@@ -267,14 +330,19 @@
         "test_corr_with_lottery: |corr(F006, F002)| < 0.6 # 与彩票因子不同"
       ],
       "priority": "P0",
-      "dependencies": ["F002"],
+      "dependencies": [
+        "F002"
+      ],
       "estimated_effort": "1.5h"
     },
     {
       "id": "F007",
       "name": "最大日收益(MAX)",
       "category": "行为金融/散户",
-      "source_papers": ["Bali et al. (2011)", "Stambaugh et al. (2012)"],
+      "source_papers": [
+        "Bali et al. (2011)",
+        "Stambaugh et al. (2012)"
+      ],
       "a_share_validation": "强(A股散户追涨停)",
       "definition": {
         "formula": "-ts_max(high/close - 1, 20)",
@@ -282,8 +350,13 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.02 - 0.04"
       },
-      "required_fields": ["high", "close"],
-      "derived_fields": ["MAX_20d"],
+      "required_fields": [
+        "high",
+        "close"
+      ],
+      "derived_fields": [
+        "MAX_20d"
+      ],
       "calculation": {
         "steps": [
           "1. 日收益 ret = high / close - 1  # 用high/close而非close/close前日",
@@ -304,14 +377,19 @@
         "test_high_max_underperform: MAX前20%组合未来收益显著低于后20%"
       ],
       "priority": "P0",
-      "dependencies": ["F002"],
+      "dependencies": [
+        "F002"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F008",
       "name": "盈利质量(应计异象)",
       "category": "质量",
-      "source_papers": ["Sloan (1996)", "Ball et al. (2016)"],
+      "source_papers": [
+        "Sloan (1996)",
+        "Ball et al. (2016)"
+      ],
       "a_share_validation": "中(应计异象在A股存在但较弱)",
       "definition": {
         "formula": "-(accruals / total_assets)",
@@ -319,9 +397,14 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.015 - 0.025"
       },
-      "required_fields": ["accruals", "total_assets"],
+      "required_fields": [
+        "accruals",
+        "total_assets"
+      ],
       "fallback_fields": [],
-      "derived_fields": ["accruals_ratio"],
+      "derived_fields": [
+        "accruals_ratio"
+      ],
       "calculation": {
         "steps": [
           "1. accruals = delta(accounts_receivable) + delta(inventory) - delta(accounts_payable)",
@@ -343,14 +426,19 @@
         "test_cash_better: 高现金流组合收益 > 高利润组合"
       ],
       "priority": "P2",
-      "dependencies": ["F005"],
+      "dependencies": [
+        "F005"
+      ],
       "estimated_effort": "1.5h"
     },
     {
       "id": "F009",
       "name": "总资产增长率",
       "category": "投资",
-      "source_papers": ["Cooper et al. (2008)", "Titman et al. (2004)"],
+      "source_papers": [
+        "Cooper et al. (2008)",
+        "Titman et al. (2004)"
+      ],
       "a_share_validation": "中(高增长公司往往过度投资)",
       "definition": {
         "formula": "-(total_assets / delay(total_assets,4q) - 1)",
@@ -358,8 +446,12 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.02 - 0.03"
       },
-      "required_fields": ["total_assets"],
-      "derived_fields": ["asset_growth"],
+      "required_fields": [
+        "total_assets"
+      ],
+      "derived_fields": [
+        "asset_growth"
+      ],
       "calculation": {
         "steps": [
           "1. asset_growth = total_assets / delay(total_assets, 4q) - 1",
@@ -379,14 +471,18 @@
         "test_investment_efficiency: 低增长组合ROE > 高增长组合"
       ],
       "priority": "P2",
-      "dependencies": ["F005"],
+      "dependencies": [
+        "F005"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F010",
       "name": "毛利率",
       "category": "质量/盈利",
-      "source_papers": ["Novy-Marx (2013)"],
+      "source_papers": [
+        "Novy-Marx (2013)"
+      ],
       "a_share_validation": "中(毛利率在A股有预测力但弱于ROE)",
       "definition": {
         "formula": "gross_profit / total_assets",
@@ -394,8 +490,13 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.015 - 0.03"
       },
-      "required_fields": ["gross_profit", "total_assets"],
-      "derived_fields": ["gross_profitability"],
+      "required_fields": [
+        "gross_profit",
+        "total_assets"
+      ],
+      "derived_fields": [
+        "gross_profitability"
+      ],
       "calculation": {
         "steps": [
           "1. gross_profitability = gross_profit / total_assets"
@@ -414,14 +515,19 @@
         "test_stability: 毛利率IC稳定性 > ROE IC稳定性"
       ],
       "priority": "P2",
-      "dependencies": ["F005"],
+      "dependencies": [
+        "F005"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F011",
       "name": "非流动性(Amihud)",
       "category": "流动性",
-      "source_papers": ["Amihud (2002)", "Pastor & Stambaugh (2003)"],
+      "source_papers": [
+        "Amihud (2002)",
+        "Pastor & Stambaugh (2003)"
+      ],
       "a_share_validation": "强(非流动性溢价在A股显著)",
       "definition": {
         "formula": "ts_mean(abs(ret) / amount, 20)",
@@ -429,8 +535,13 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.02 - 0.04"
       },
-      "required_fields": ["close", "amount"],
-      "derived_fields": ["amihud_illiq"],
+      "required_fields": [
+        "close",
+        "amount"
+      ],
+      "derived_fields": [
+        "amihud_illiq"
+      ],
       "calculation": {
         "steps": [
           "1. ret = close / delay(close,1) - 1",
@@ -451,14 +562,19 @@
         "test_small_cap_bias: 中性化后size_corr < 0.2"
       ],
       "priority": "P1",
-      "dependencies": ["UC1-1"],
+      "dependencies": [
+        "UC1-1"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F012",
       "name": "隔夜跳空",
       "category": "日内结构",
-      "source_papers": ["Alpha101 #20", "Hong & Stein (1999)"],
+      "source_papers": [
+        "Alpha101 #20",
+        "Hong & Stein (1999)"
+      ],
       "a_share_validation": "中(A股跳空较多但T+1限制)",
       "definition": {
         "formula": "rank(open - delay(close,1)) / rank(abs(open - delay(close,1)))",
@@ -466,8 +582,13 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.015 - 0.03"
       },
-      "required_fields": ["open", "close"],
-      "derived_fields": ["overnight_gap"],
+      "required_fields": [
+        "open",
+        "close"
+      ],
+      "derived_fields": [
+        "overnight_gap"
+      ],
       "calculation": {
         "steps": [
           "1. gap = open - delay(close,1)",
@@ -488,14 +609,19 @@
         "test_gap_fill: 向上跳空后3日内回补概率 > 50%"
       ],
       "priority": "P1",
-      "dependencies": ["F001"],
+      "dependencies": [
+        "F001"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F013",
       "name": "VWAP偏离",
       "category": "日内结构",
-      "source_papers": ["Alpha101 #42", "Alpha101 #5"],
+      "source_papers": [
+        "Alpha101 #42",
+        "Alpha101 #5"
+      ],
       "a_share_validation": "中(日内结构数据可用但T+1限制)",
       "definition": {
         "formula": "rank(vwap - close) / rank(vwap + close)",
@@ -503,8 +629,13 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.015 - 0.03"
       },
-      "required_fields": ["vwap", "close"],
-      "derived_fields": ["vwap_deviation"],
+      "required_fields": [
+        "vwap",
+        "close"
+      ],
+      "derived_fields": [
+        "vwap_deviation"
+      ],
       "calculation": {
         "steps": [
           "1. vwap_deviation = (vwap - close) / close",
@@ -524,14 +655,19 @@
         "test_distribution: vwap_deviation分布近似对称"
       ],
       "priority": "P2",
-      "dependencies": ["F001"],
+      "dependencies": [
+        "F001"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F014",
       "name": "价格-成交量相关性",
       "category": "价量背离",
-      "source_papers": ["Alpha101 #3", "Chordia et al. (2000)"],
+      "source_papers": [
+        "Alpha101 #3",
+        "Chordia et al. (2000)"
+      ],
       "a_share_validation": "强(A股量价背离显著)",
       "definition": {
         "formula": "-correlation(rank(close), rank(volume), 10)",
@@ -539,8 +675,13 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.02 - 0.04"
       },
-      "required_fields": ["close", "volume"],
-      "derived_fields": ["price_volume_corr"],
+      "required_fields": [
+        "close",
+        "volume"
+      ],
+      "derived_fields": [
+        "price_volume_corr"
+      ],
       "calculation": {
         "steps": [
           "1. rank_close = rank(close)",
@@ -562,14 +703,19 @@
         "test_divergence_signal: 价量背离时未来5日收益反向"
       ],
       "priority": "P0",
-      "dependencies": ["F001"],
+      "dependencies": [
+        "F001"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F015",
       "name": "收益方差比",
       "category": "波动率",
-      "source_papers": ["Alpha101 #1", "Blitz & van Vliet (2007)"],
+      "source_papers": [
+        "Alpha101 #1",
+        "Blitz & van Vliet (2007)"
+      ],
       "a_share_validation": "中(低波动异象在A股存在)",
       "definition": {
         "formula": "stddev(returns, 20) / stddev(returns, 60)",
@@ -577,8 +723,12 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.015 - 0.03"
       },
-      "required_fields": ["close"],
-      "derived_fields": ["vol_ratio"],
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "vol_ratio"
+      ],
       "calculation": {
         "steps": [
           "1. ret = close / delay(close,1) - 1",
@@ -601,14 +751,19 @@
         "test_low_vol_outperform: 低波动组合长期收益 > 高波动组合"
       ],
       "priority": "P1",
-      "dependencies": ["F006"],
+      "dependencies": [
+        "F006"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F016",
       "name": "行业动量",
       "category": "动量",
-      "source_papers": ["Moskowitz & Grinblatt (1999)", "Hong & Stein (1999)"],
+      "source_papers": [
+        "Moskowitz & Grinblatt (1999)",
+        "Hong & Stein (1999)"
+      ],
       "a_share_validation": "中(行业动量在A股有效但需行业分类)",
       "definition": {
         "formula": "industry_avg_ret_20d",
@@ -616,8 +771,13 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.02 - 0.04"
       },
-      "required_fields": ["close", "industry_code"],
-      "derived_fields": ["industry_momentum"],
+      "required_fields": [
+        "close",
+        "industry_code"
+      ],
+      "derived_fields": [
+        "industry_momentum"
+      ],
       "calculation": {
         "steps": [
           "1. ret_20d = close / delay(close,20) - 1",
@@ -638,14 +798,19 @@
         "test_industry_persistence: 领先行业3个月后仍领先"
       ],
       "priority": "P2",
-      "dependencies": ["UC1-3"],
+      "dependencies": [
+        "UC1-3"
+      ],
       "estimated_effort": "1.5h"
     },
     {
       "id": "F017",
       "name": "异质信念波动率",
       "category": "行为金融",
-      "source_papers": ["Hong & Stein (1999)", "Campbell et al. (2008)"],
+      "source_papers": [
+        "Hong & Stein (1999)",
+        "Campbell et al. (2008)"
+      ],
       "a_share_validation": "中(散户分歧度与收益负相关)",
       "definition": {
         "formula": "stddev(ret, 20) / abs(ts_mean(ret, 20))",
@@ -653,8 +818,12 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.015 - 0.03"
       },
-      "required_fields": ["close"],
-      "derived_fields": ["disagreement"],
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "disagreement"
+      ],
       "calculation": {
         "steps": [
           "1. ret = close / delay(close,1) - 1",
@@ -675,14 +844,19 @@
         "test_high_turnover: 高分歧股票换手率显著更高"
       ],
       "priority": "P2",
-      "dependencies": ["F006"],
+      "dependencies": [
+        "F006"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F018",
       "name": "换手率异常",
       "category": "流动性",
-      "source_papers": ["Alpha101 #7", "Chordia et al. (2000)"],
+      "source_papers": [
+        "Alpha101 #7",
+        "Chordia et al. (2000)"
+      ],
       "a_share_validation": "强(高换手股票未来收益低)",
       "definition": {
         "formula": "-rank(turnover_20d / delay(turnover_20d, 20) - 1)",
@@ -690,8 +864,13 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.02 - 0.04"
       },
-      "required_fields": ["volume", "float_shares"],
-      "derived_fields": ["turnover_change"],
+      "required_fields": [
+        "volume",
+        "float_shares"
+      ],
+      "derived_fields": [
+        "turnover_change"
+      ],
       "calculation": {
         "steps": [
           "1. turnover_20d = volume / float_shares",
@@ -712,14 +891,19 @@
         "test_retail_proxy: 高换手组合散户比例显著更高"
       ],
       "priority": "P0",
-      "dependencies": ["F001"],
+      "dependencies": [
+        "F001"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F019",
       "name": "收盘位置值",
       "category": "日内结构",
-      "source_papers": ["Alpha101 #101", "Daniel & Titman (2006)"],
+      "source_papers": [
+        "Alpha101 #101",
+        "Daniel & Titman (2006)"
+      ],
       "a_share_validation": "中(日内收盘位置有信息)",
       "definition": {
         "formula": "(close - open) / ((high - low) + 0.001)",
@@ -727,8 +911,15 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.015 - 0.025"
       },
-      "required_fields": ["open", "high", "low", "close"],
-      "derived_fields": ["close_location"],
+      "required_fields": [
+        "open",
+        "high",
+        "low",
+        "close"
+      ],
+      "derived_fields": [
+        "close_location"
+      ],
       "calculation": {
         "steps": [
           "1. close_location = (close - open) / ((high - low) + 0.001)"
@@ -747,14 +938,19 @@
         "test_continuation: 高收盘位置次日开盘跳空概率 > 50%"
       ],
       "priority": "P2",
-      "dependencies": ["F001"],
+      "dependencies": [
+        "F001"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F020",
       "name": "漂移状态动量",
       "category": "动量/反转",
-      "source_papers": ["Hong & Stein (1999)", "现有S7策略"],
+      "source_papers": [
+        "Hong & Stein (1999)",
+        "现有S7策略"
+      ],
       "a_share_validation": "弱(已在S7中实现，效果一般)",
       "definition": {
         "formula": "if ts_min(ret, 5) > 0: momentum else: reversal",
@@ -762,8 +958,12 @@
         "expected_ic_sign": "positive(in trend), negative(in reversal)",
         "expected_ic_magnitude": "0.01 - 0.02"
       },
-      "required_fields": ["close"],
-      "derived_fields": ["drift_state"],
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "drift_state"
+      ],
       "calculation": {
         "steps": [
           "1. ret = close / delay(close,1) - 1",
@@ -783,14 +983,19 @@
         "test_conditional: 趋势状态动量IC>0, 反转状态IC<0"
       ],
       "priority": "P3",
-      "dependencies": ["F001"],
+      "dependencies": [
+        "F001"
+      ],
       "estimated_effort": "0.5h"
     },
     {
       "id": "F021",
       "name": "贝塔套利",
       "category": "风险",
-      "source_papers": ["Fama & French (1992)", "Asness (1997)"],
+      "source_papers": [
+        "Fama & French (1992)",
+        "Asness (1997)"
+      ],
       "a_share_validation": "弱(A股贝塔与收益关系不稳定)",
       "definition": {
         "formula": "-rank(beta_60d)",
@@ -798,8 +1003,13 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.01 - 0.02"
       },
-      "required_fields": ["close", "market_index"],
-      "derived_fields": ["beta_60d"],
+      "required_fields": [
+        "close",
+        "market_index"
+      ],
+      "derived_fields": [
+        "beta_60d"
+      ],
       "calculation": {
         "steps": [
           "1. ret = close / delay(close,1) - 1",
@@ -821,14 +1031,19 @@
         "test_low_beta_outperform: 低贝塔组合夏普 > 高贝塔组合"
       ],
       "priority": "P3",
-      "dependencies": ["F006"],
+      "dependencies": [
+        "F006"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F022",
       "name": "收益偏度",
       "category": "行为金融",
-      "source_papers": ["Stambaugh et al. (2012)", "Bali et al. (2011)"],
+      "source_papers": [
+        "Stambaugh et al. (2012)",
+        "Bali et al. (2011)"
+      ],
       "a_share_validation": "中(偏度偏好存在)",
       "definition": {
         "formula": "-rank(skew(ret, 60))",
@@ -836,8 +1051,12 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.01 - 0.03"
       },
-      "required_fields": ["close"],
-      "derived_fields": ["skew_60d"],
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "skew_60d"
+      ],
       "calculation": {
         "steps": [
           "1. ret = close / delay(close,1) - 1",
@@ -858,14 +1077,19 @@
         "test_lottery_corr: |corr(F022, F002)| < 0.6"
       ],
       "priority": "P2",
-      "dependencies": ["F002"],
+      "dependencies": [
+        "F002"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F023",
       "name": "趋势强度",
       "category": "动量",
-      "source_papers": ["Alpha101 #9", "Jegadeesh & Titman (1993)"],
+      "source_papers": [
+        "Alpha101 #9",
+        "Jegadeesh & Titman (1993)"
+      ],
       "a_share_validation": "中(趋势判断在A股有效)",
       "definition": {
         "formula": "abs(ts_mean(ret, 20)) / stddev(ret, 20)",
@@ -873,8 +1097,12 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.01 - 0.02"
       },
-      "required_fields": ["close"],
-      "derived_fields": ["trend_strength"],
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "trend_strength"
+      ],
       "calculation": {
         "steps": [
           "1. ret = close / delay(close,1) - 1",
@@ -895,14 +1123,19 @@
         "test_momentum_persistence: 强趋势组合未来20日收益 > 弱趋势"
       ],
       "priority": "P3",
-      "dependencies": ["F001"],
+      "dependencies": [
+        "F001"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F024",
       "name": "ADR(累积/分布比率)",
       "category": "价量",
-      "source_papers": ["Alpha101 #12", "Williams (1985)"],
+      "source_papers": [
+        "Alpha101 #12",
+        "Williams (1985)"
+      ],
       "a_share_validation": "中(日内资金流向有信息)",
       "definition": {
         "formula": "sign(delta(volume)) * (-delta(close))",
@@ -910,8 +1143,13 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.01 - 0.02"
       },
-      "required_fields": ["close", "volume"],
-      "derived_fields": ["adr"],
+      "required_fields": [
+        "close",
+        "volume"
+      ],
+      "derived_fields": [
+        "adr"
+      ],
       "calculation": {
         "steps": [
           "1. vol_change = sign(volume - delay(volume,1))",
@@ -932,14 +1170,19 @@
         "test_divergence: 量价背离时因子值最大"
       ],
       "priority": "P3",
-      "dependencies": ["F014"],
+      "dependencies": [
+        "F014"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F025",
       "name": "动量质量",
       "category": "动量",
-      "source_papers": ["Asness (1997)", "现有S10策略"],
+      "source_papers": [
+        "Asness (1997)",
+        "现有S10策略"
+      ],
       "a_share_validation": "中(已在S10中部分实现)",
       "definition": {
         "formula": "rank(mom_20d) * rank(volatility_20d)",
@@ -947,8 +1190,13 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.01 - 0.02"
       },
-      "required_fields": ["close"],
-      "derived_fields": ["mom_20d", "volatility_20d"],
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "mom_20d",
+        "volatility_20d"
+      ],
       "calculation": {
         "steps": [
           "1. mom_20d = close / delay(close,20) - 1",
@@ -969,14 +1217,20 @@
         "test_low_vol_filter: 组合波动率 < 纯动量组合"
       ],
       "priority": "P3",
-      "dependencies": ["F001", "F006"],
+      "dependencies": [
+        "F001",
+        "F006"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F026",
       "name": "长尾收益",
       "category": "分布",
-      "source_papers": ["Bali et al. (2011)", "Stambaugh et al. (2012)"],
+      "source_papers": [
+        "Bali et al. (2011)",
+        "Stambaugh et al. (2012)"
+      ],
       "a_share_validation": "弱(数据要求高)",
       "definition": {
         "formula": "percentile(ret, 95) - percentile(ret, 5)",
@@ -984,8 +1238,12 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.01 - 0.02"
       },
-      "required_fields": ["close"],
-      "derived_fields": ["tail_return"],
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "tail_return"
+      ],
       "calculation": {
         "steps": [
           "1. ret = close / delay(close,1) - 1",
@@ -1006,14 +1264,19 @@
         "test_tail_risk: 宽尾部组合最大回撤 > 窄尾部"
       ],
       "priority": "P3",
-      "dependencies": ["F002"],
+      "dependencies": [
+        "F002"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F027",
       "name": "盈利动量",
       "category": "盈利",
-      "source_papers": ["Ball & Brown (1968)", "PEAD in China"],
+      "source_papers": [
+        "Ball & Brown (1968)",
+        "PEAD in China"
+      ],
       "a_share_validation": "中(季报动量在A股有效但窗口短)",
       "definition": {
         "formula": "SUE = (EPS - expected_EPS) / stddev(EPS, 8q)",
@@ -1021,9 +1284,16 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.02 - 0.04"
       },
-      "required_fields": ["EPS", "expected_EPS"],
-      "fallback_fields": ["close"],
-      "derived_fields": ["SUE"],
+      "required_fields": [
+        "EPS",
+        "expected_EPS"
+      ],
+      "fallback_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "SUE"
+      ],
       "calculation": {
         "steps": [
           "PRIMARY: 1. SUE = (EPS - expected_EPS) / stddev(EPS, 8q)",
@@ -1043,14 +1313,19 @@
         "test_PEAD: 高SUE组合未来60日收益持续漂移"
       ],
       "priority": "P1",
-      "dependencies": ["F004"],
+      "dependencies": [
+        "F004"
+      ],
       "estimated_effort": "1.5h"
     },
     {
       "id": "F028",
       "name": "现金流价格比",
       "category": "价值",
-      "source_papers": ["Ball et al. (2016)", "Fama & French (2015)"],
+      "source_papers": [
+        "Ball et al. (2016)",
+        "Fama & French (2015)"
+      ],
       "a_share_validation": "中(现金流比利润更可靠)",
       "definition": {
         "formula": "operating_cashflow / mcap",
@@ -1058,9 +1333,16 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.02 - 0.03"
       },
-      "required_fields": ["operating_cashflow", "mcap"],
-      "fallback_fields": ["pb"],
-      "derived_fields": ["cfp"],
+      "required_fields": [
+        "operating_cashflow",
+        "mcap"
+      ],
+      "fallback_fields": [
+        "pb"
+      ],
+      "derived_fields": [
+        "cfp"
+      ],
       "calculation": {
         "steps": [
           "PRIMARY: 1. cfp = operating_cashflow / mcap",
@@ -1080,14 +1362,19 @@
         "test_vs_PE: CFP组合夏普 > P/E组合"
       ],
       "priority": "P2",
-      "dependencies": ["F005"],
+      "dependencies": [
+        "F005"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F029",
       "name": "研发投入强度",
       "category": "成长",
-      "source_papers": ["Eberhart et al. (2004)", "中国科技成长股研究"],
+      "source_papers": [
+        "Eberhart et al. (2004)",
+        "中国科技成长股研究"
+      ],
       "a_share_validation": "弱(A股研发数据质量参差不齐)",
       "definition": {
         "formula": "R&D_expense / total_revenue",
@@ -1095,9 +1382,14 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.01 - 0.02"
       },
-      "required_fields": ["R&D_expense", "total_revenue"],
+      "required_fields": [
+        "R&D_expense",
+        "total_revenue"
+      ],
       "fallback_fields": [],
-      "derived_fields": ["rd_intensity"],
+      "derived_fields": [
+        "rd_intensity"
+      ],
       "calculation": {
         "steps": [
           "1. rd_intensity = R&D_expense / total_revenue"
@@ -1116,14 +1408,19 @@
         "test_growth: 高研发组合未来营收增长 > 低研发"
       ],
       "priority": "P3",
-      "dependencies": ["F005"],
+      "dependencies": [
+        "F005"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F030",
       "name": "分析师预期修正",
       "category": "预期",
-      "source_papers": ["Zhang et al. (2023)", "PEAD in China"],
+      "source_papers": [
+        "Zhang et al. (2023)",
+        "PEAD in China"
+      ],
       "a_share_validation": "弱(分析师覆盖度低)",
       "definition": {
         "formula": "(current_EPS_estimate - previous_EPS_estimate) / abs(previous_EPS_estimate)",
@@ -1131,9 +1428,16 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.02 - 0.03"
       },
-      "required_fields": ["EPS_estimate", "previous_EPS_estimate"],
-      "fallback_fields": ["close"],
-      "derived_fields": ["estimate_revision"],
+      "required_fields": [
+        "EPS_estimate",
+        "previous_EPS_estimate"
+      ],
+      "fallback_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "estimate_revision"
+      ],
       "calculation": {
         "steps": [
           "PRIMARY: 1. revision = (EPS_estimate - previous) / abs(previous)",
@@ -1153,14 +1457,19 @@
         "test_revision_persistence: 上调后60日收益持续"
       ],
       "priority": "P3",
-      "dependencies": ["F004", "F027"],
+      "dependencies": [
+        "F004",
+        "F027"
+      ],
       "estimated_effort": "1.5h"
     },
     {
       "id": "F031",
       "name": "52周高点接近度",
       "category": "动量/锚定",
-      "source_papers": ["George & Hwang (2004)"],
+      "source_papers": [
+        "George & Hwang (2004)"
+      ],
       "a_share_validation": "中(A股趋势与价格锚定效应显著)",
       "definition": {
         "formula": "rank(close / ts_max(high, 252))",
@@ -1168,8 +1477,14 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.02 - 0.04"
       },
-      "required_fields": ["close", "high"],
-      "derived_fields": ["rolling_52w_high", "proximity"],
+      "required_fields": [
+        "close",
+        "high"
+      ],
+      "derived_fields": [
+        "rolling_52w_high",
+        "proximity"
+      ],
       "calculation": {
         "steps": [
           "1. rolling_high = ts_max(high, 252)",
@@ -1190,14 +1505,19 @@
         "test_no_lookahead: 未来价格扰动不改变历史因子值"
       ],
       "priority": "P4",
-      "dependencies": ["F023", "F025"],
+      "dependencies": [
+        "F023",
+        "F025"
+      ],
       "estimated_effort": "1h"
     },
     {
       "id": "F032",
       "name": "同月季节性",
       "category": "季节性",
-      "source_papers": ["Heston & Sadka (2008)"],
+      "source_papers": [
+        "Heston & Sadka (2008)"
+      ],
       "a_share_validation": "中(A股日历效应与资金季节性较强)",
       "definition": {
         "formula": "rank(expanding_mean_prior_years(monthly_return | month_of_year))",
@@ -1205,8 +1525,13 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.01 - 0.03"
       },
-      "required_fields": ["close"],
-      "derived_fields": ["monthly_return", "same_month_prior_mean"],
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "monthly_return",
+        "same_month_prior_mean"
+      ],
       "calculation": {
         "steps": [
           "1. monthly_return = last_close_this_month / last_close_previous_month - 1",
@@ -1234,7 +1559,9 @@
       "id": "F033",
       "name": "下行Beta",
       "category": "风险",
-      "source_papers": ["Ang, Chen & Xing (2006)"],
+      "source_papers": [
+        "Ang, Chen & Xing (2006)"
+      ],
       "a_share_validation": "中(下跌市场中的风险暴露应获得折价)",
       "definition": {
         "formula": "-rank(cov(r_i, r_m | r_m < 0) / var(r_m | r_m < 0))",
@@ -1242,8 +1569,14 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.02 - 0.04"
       },
-      "required_fields": ["close"],
-      "derived_fields": ["daily_return", "market_return", "downside_beta"],
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "daily_return",
+        "market_return",
+        "downside_beta"
+      ],
       "calculation": {
         "steps": [
           "1. r_m = cross_sectional_mean(daily_return)",
@@ -1265,14 +1598,18 @@
         "test_distinct_from_unconditional_beta: 与F021相关性较低"
       ],
       "priority": "P4",
-      "dependencies": ["F021"],
+      "dependencies": [
+        "F021"
+      ],
       "estimated_effort": "1.5h"
     },
     {
       "id": "F034",
       "name": "信息离散度动量质量",
       "category": "行为金融/动量",
-      "source_papers": ["Da, Gurun & Warachka (2014)"],
+      "source_papers": [
+        "Da, Gurun & Warachka (2014)"
+      ],
       "a_share_validation": "中(A股信息扩散和涨跌停导致离散/连续信息差异)",
       "definition": {
         "formula": "0.4 * rank(PRET) + 0.6 * rank(-ID), ID = sign(PRET) * (%neg_days - %pos_days)",
@@ -1280,8 +1617,15 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.02 - 0.04"
       },
-      "required_fields": ["close"],
-      "derived_fields": ["PRET", "positive_day_fraction", "negative_day_fraction", "ID"],
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "PRET",
+        "positive_day_fraction",
+        "negative_day_fraction",
+        "ID"
+      ],
       "calculation": {
         "steps": [
           "1. PRET = close / delay(close, window) - 1",
@@ -1302,14 +1646,18 @@
         "test_distinct_from_momentum_quality: 与F025相关性较低"
       ],
       "priority": "P4",
-      "dependencies": ["F025"],
+      "dependencies": [
+        "F025"
+      ],
       "estimated_effort": "1.5h"
     },
     {
       "id": "F035",
       "name": "前景理论价值",
       "category": "行为金融/分布",
-      "source_papers": ["Barberis, Mukherjee & Wang (2016)"],
+      "source_papers": [
+        "Barberis, Mukherjee & Wang (2016)"
+      ],
       "a_share_validation": "中(A股散户占比高，彩票/损失厌恶偏好强)",
       "definition": {
         "formula": "-rank(sum(rank_weighted_probability * v(ret))), v(x)=x^0.88 or -2.25*(-x)^0.88",
@@ -1317,8 +1665,13 @@
         "expected_ic_sign": "negative",
         "expected_ic_magnitude": "0.02 - 0.04"
       },
-      "required_fields": ["close"],
-      "derived_fields": ["daily_return", "tk_value"],
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "daily_return",
+        "tk_value"
+      ],
       "calculation": {
         "steps": [
           "1. 计算滚动日收益分布",
@@ -1340,14 +1693,20 @@
         "test_handles_short_history: 短历史返回NaN且不报错"
       ],
       "priority": "P4",
-      "dependencies": ["F002", "F026"],
+      "dependencies": [
+        "F002",
+        "F026"
+      ],
       "estimated_effort": "2h"
     },
     {
       "id": "F036",
       "name": "滚动最大回撤",
       "category": "路径风险/反转",
-      "source_papers": ["Path-dependent risk anomaly", "A-share reversal literature"],
+      "source_papers": [
+        "Path-dependent risk anomaly",
+        "A-share reversal literature"
+      ],
       "a_share_validation": "中(A股极端下跌后常有过度反应修复)",
       "definition": {
         "formula": "rank(abs(min(cum_t / running_max_t - 1)))",
@@ -1355,8 +1714,12 @@
         "expected_ic_sign": "positive",
         "expected_ic_magnitude": "0.01 - 0.03"
       },
-      "required_fields": ["close"],
-      "derived_fields": ["rolling_max_drawdown"],
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "rolling_max_drawdown"
+      ],
       "calculation": {
         "steps": [
           "1. 对窗口内close计算running_max",
@@ -1378,46 +1741,125 @@
         "test_no_lookahead: 未来深跌不影响历史因子"
       ],
       "priority": "P4",
-      "dependencies": ["F026"],
+      "dependencies": [
+        "F026"
+      ],
       "estimated_effort": "1h"
     }
   ],
   "factor_groups": {
-    "P0_critical": ["F001", "F002", "F006", "F007", "F014", "F018"],
-    "P1_high": ["F003", "F004", "F005", "F011", "F012", "F027", "F028"],
-    "P2_medium": ["F008", "F009", "F010", "F013", "F015", "F016", "F017", "F022"],
-    "P3_low": ["F019", "F020", "F021", "F023", "F024", "F025", "F026", "F029", "F030"]
+    "P0_critical": [
+      "F001",
+      "F002",
+      "F006",
+      "F007",
+      "F014",
+      "F018"
+    ],
+    "P1_high": [
+      "F003",
+      "F004",
+      "F005",
+      "F011",
+      "F012",
+      "F027",
+      "F028"
+    ],
+    "P2_medium": [
+      "F008",
+      "F009",
+      "F010",
+      "F013",
+      "F015",
+      "F016",
+      "F017",
+      "F022"
+    ],
+    "P3_low": [
+      "F019",
+      "F020",
+      "F021",
+      "F023",
+      "F024",
+      "F025",
+      "F026",
+      "F029",
+      "F030"
+    ]
   },
   "implementation_plan": {
     "phase_1": {
       "name": "P0因子实施(6个)",
       "duration": "2-3天",
-      "factors": ["F001", "F002", "F006", "F007", "F014", "F018"],
-      "dependencies": ["UC1-1", "UC1-2"],
+      "factors": [
+        "F001",
+        "F002",
+        "F006",
+        "F007",
+        "F014",
+        "F018"
+      ],
+      "dependencies": [
+        "UC1-1",
+        "UC1-2"
+      ],
       "expected_total_ic_lift": "+0.15 to +0.25",
       "expected_sharpe_lift": "+0.5 to +1.0"
     },
     "phase_2": {
       "name": "P1因子实施(7个)",
       "duration": "3-4天",
-      "factors": ["F003", "F004", "F005", "F011", "F012", "F027", "F028"],
-      "dependencies": ["phase_1"],
+      "factors": [
+        "F003",
+        "F004",
+        "F005",
+        "F011",
+        "F012",
+        "F027",
+        "F028"
+      ],
+      "dependencies": [
+        "phase_1"
+      ],
       "expected_total_ic_lift": "+0.10 to +0.15",
       "expected_sharpe_lift": "+0.3 to +0.5"
     },
     "phase_3": {
       "name": "P2因子实施(8个)",
       "duration": "4-5天",
-      "factors": ["F008", "F009", "F010", "F013", "F015", "F016", "F017", "F022"],
-      "dependencies": ["phase_2"],
+      "factors": [
+        "F008",
+        "F009",
+        "F010",
+        "F013",
+        "F015",
+        "F016",
+        "F017",
+        "F022"
+      ],
+      "dependencies": [
+        "phase_2"
+      ],
       "expected_total_ic_lift": "+0.05 to +0.10",
       "expected_sharpe_lift": "+0.2 to +0.3"
     },
     "phase_4": {
       "name": "P3因子实施(9个)",
       "duration": "5-7天",
-      "factors": ["F019", "F020", "F021", "F023", "F024", "F025", "F026", "F029", "F030"],
-      "dependencies": ["phase_3"],
+      "factors": [
+        "F019",
+        "F020",
+        "F021",
+        "F023",
+        "F024",
+        "F025",
+        "F026",
+        "F029",
+        "F030"
+      ],
+      "dependencies": [
+        "phase_3"
+      ],
       "expected_total_ic_lift": "+0.03 to +0.05",
       "expected_sharpe_lift": "+0.1 to +0.2"
     }
