@@ -3,6 +3,39 @@
 本文件记录 backtest_mvp 的高层变更。因子级细节见 `FACTOR_LIBRARY.json`，
 alpha 路线图进度见 `roadmap_alpha_uplift.json` 的 `progress_log`。
 
+## 2026-07-01 — Phase 4：新增去相关 Alpha 因子 F037-F042（roadmap WS-C UC7）
+
+### 新增 (Added)
+- **6 个去相关 Alpha 因子**（roadmap WS-C UC7，commit `4fb5540` 因子+测试、
+  `db347d1` FACTOR_LIBRARY.json v1.2）。从近期文献取灵感，各来自不同 family
+  以最小化互相关，纯用现有 panel 列、有出处、加法式追加（零回归）：
+  - **F037 系统性协偏度** `coskewness`（Harvey-Siddique 2000, JF）——
+    `-rank(E[εᵢ·ε_m²]/(std(εᵢ)·var(ε_m)))`，系统性三阶共矩；区别于 F022 自身偏度。
+  - **F038 隔夜-日内拉锯** `overnight_intraday_tug`（Lou-Polk-Skouras 2019, JFE）——
+    21d 累积(隔夜−日内)收益；区别于 F012 单日跳空。
+  - **F039 换手率变异系数** `turnover_cv`（Chordia 等 2001, JFE）——
+    `std/mean` 流动性二阶矩；区别于 F018 换手水平。
+  - **F040 隔夜跳空方差占比** `overnight_variance_share`（Parkinson 1980）——
+    `隔夜var/(隔夜var+日内Parkinson var)`，**首个使用 high-low 区间的因子**，
+    尺度无关比值与波动水平去相关（区别于 F006）。
+  - **F041 水下时间/回撤持续期** `time_under_water`（路径依赖风险）——
+    高水位下方时长占比；区别于 F036 回撤幅度。
+  - **F042 非流动性变化** `delta_amihud`（Amihud 2002）——
+    近段−前段 Amihud 变化率；区别于 F011 Amihud 水平。
+  - `FACTOR_REGISTRY` 36→42；`FACTOR_LIBRARY.json` v1.1→v1.2（补 5 篇 source_papers、
+    P4_academic/P5_decorrelated 分组，并补齐历史遗漏的 F031-F036 分组）。
+  - 测试 `test_factors_p5.py`（25 例，合成快测）：对齐/短历史安全、每因子构造性
+    单调 sanity、无前视、与最近邻既有因子去相关、`compute_all_factors` 集成。
+
+### 去相关口径 (Note)
+- repo 单测约定 `|corr|<0.8`（全部通过）；**设计目标 `|corr|<0.4` 针对真实截面数据**。
+  合成随机面板（纯噪声 + 共同市场因子）为去相关最坏情形，F040/F041 在其上与最近邻
+  相关 ~0.5（区间比值 / 回撤族在随机游走上人为相关），实盘截面数据预期显著更低。
+
+### 仍待处理 (Top pending)
+- **F043 价格延迟**（Hou-Moskowitz 2005）因嵌套滚动回归计算较重，延后（登记 roadmap backlog）。
+- 接入 `combiner` 对 42 因子实测 IC / 去相关合成；接入 `overfitting.py` 出 PBO/DSR 部署裁决。
+
 ## 2026-07-01 — Phase 3：严谨过拟合诊断（roadmap UA3）
 
 ### 新增 (Added)

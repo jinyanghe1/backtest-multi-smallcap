@@ -425,6 +425,33 @@
           "touch_points": [
             "research_loop/loop.py"
           ]
+        },
+        {
+          "id": "UC7",
+          "title": "Literature-sourced decorrelated factor batch (F037-F042)",
+          "status": "done",
+          "rationale": "36 因子后边际递减且过拟合风险高，故只补有文献出处、纯用现有 panel 列、与既有因子低相关(目标|corr|<0.4)的净新 family，最小化互相关。",
+          "method": "从近期文献(Harvey-Siddique 2000 协偏度; Lou-Polk-Skouras 2019 隔夜-日内拉锯; Chordia 等 2001 换手 CV; Parkinson 1980 区间方差占比; 路径依赖回撤持续期; Amihud 2002 非流动性变化)映射为 6 个 panel 安全因子，加法式追加 factor_library.py + FACTOR_REGISTRY，25 例单测(构造性单调 + 无前视 + 去相关)，零回归。",
+          "delivered": [
+            "F037 系统性协偏度",
+            "F038 隔夜-日内拉锯",
+            "F039 换手率变异系数",
+            "F040 隔夜跳空方差占比(首用 high-low 区间)",
+            "F041 水下时间/回撤持续期",
+            "F042 非流动性变化 Δ-Amihud"
+          ],
+          "expected_impact": "净新去相关 alpha 候选，供 combiner(UC3/UD3) IC 加权合成；各因子与最近邻既有因子在真实截面数据上目标 |corr|<0.4。",
+          "effort": "0.5d",
+          "priority": "P1",
+          "deps": [],
+          "touch_points": [
+            "factors/factor_library.py",
+            "FACTOR_LIBRARY.json",
+            "test_factors_p5.py"
+          ],
+          "backlog": [
+            "F043 价格延迟 Price delay (Hou-Moskowitz 2005): 嵌套滚动 OLS(市场代理+4阶滞后)，delay=1−R²_restricted/R²_full；计算较重，延后。"
+          ]
         }
       ]
     },
@@ -693,6 +720,22 @@
       ],
       "validation": "test_overfitting.py 27/27 pass (offline, deterministic synthetic). Analytical properties verified: PSR monotonicity + benchmark=0.5 + skew/kurt sign; E[max] grows with N, zero at N=1/var=0; DSR deflation logic; PBO ≈0 for a dominant strategy, mean ≈0.48 over 16 pure-noise draws, =1.0 for a constructed overfit, C(S,S/2) combinatorics, input validation, no RankWarning. New module only — structurally zero regression (no engine/data edits).",
       "still_top_pending": "Wire overfitting.py into the factor-zoo evaluator (empirical PBO/DSR across the 36 factors + strategy variants) to produce an honest deploy/no-deploy verdict. UA2 ADV-impact + UD1 risk-overlay still unwired into canonical engine."
+    },
+    {
+      "date": "2026-07-01",
+      "session": "phase4-decorrelated-factors",
+      "delivered": [
+        "WS-C UC7 (done): 新增 6 个去相关 Alpha 因子 F037-F042（各来自不同 family，均有文献出处、纯用现有 panel 列）。commit 4fb5540(因子+25测试), db347d1(FACTOR_LIBRARY.json v1.2)。",
+        "F037 系统性协偏度(Harvey-Siddique 2000); F038 隔夜-日内拉锯(Lou-Polk-Skouras 2019 JFE); F039 换手率变异系数(Chordia 等 2001 JFE); F040 隔夜跳空方差占比(Parkinson 1980，首用 high-low 区间); F041 水下时间/回撤持续期(路径依赖); F042 非流动性变化 Δ-Amihud(Amihud 2002)。",
+        "FACTOR_REGISTRY 36→42；FACTOR_LIBRARY.json v1.1→v1.2（补 5 篇 source_papers + P4_academic/P5_decorrelated 分组，补齐历史遗漏的 F031-F036 分组）。"
+      ],
+      "validation": "workbuddy env: test_factors_p5.py 25 例全绿；compute_all_factors 含 42 因子集成通过；既有 test_factors_p4+test_operators 35 例零回归；6 因子合成面板覆盖率>0.91。",
+      "decorrelation_note": "合成随机面板(纯噪声+共同市场因子)为去相关最坏情形，F040/F041 在其上与最近邻相关 ~0.5(区间比值/回撤族的随机游走人为相关)；repo 单测约定 |corr|<0.8(全部通过)，设计目标 |corr|<0.4 针对真实截面数据。",
+      "backlog": [
+        "F043 价格延迟(Hou-Moskowitz 2005) 因嵌套回归计算较重延后",
+        "接入 combiner 对 42 因子实测 IC/去相关合成",
+        "接入 overfitting.py 出 PBO/DSR 部署裁决"
+      ]
     }
   ]
 }
