@@ -292,6 +292,8 @@ class CrossSectionalEngine:
         factor_weights: Optional[Dict[str, float]] = None,
         neutralize: bool = False,
         neutralize_strength: float = 0.5,
+        pit_universe: bool = False,
+        delist_manager: Optional["DelistManager"] = None,
     ) -> BacktestResult:
         """
         执行截面回测
@@ -315,6 +317,12 @@ class CrossSectionalEngine:
                             默认 None = 等权; 提供时用加权和替代等权和
             neutralize: 是否对 ranking_factor 做截面中性化 (size+industry 回归取残差)
             neutralize_strength: 中性化强度 (0=不中性化, 0.5=移除50%暴露, 1.0=完全中性化)
+            pit_universe: 是否启用 PIT 无偏 universe 过滤 (opt-in, 默认 False = 完全保持原行为).
+                          True 时在每个调仓日剔除"截至该日已退市"的标的, 缓解幸存者偏差.
+                          注意: 仅能剔除 panel 中已含的已退市标的; 完整无偏还需数据层纳入退市标的.
+            delist_manager: 可选注入的 DelistManager (用于测试/自定义退市缓存). None 且
+                            pit_universe=True 时惰性构造默认实例 (读 data_cache/delisted_stocks.csv,
+                            无本地缓存才联网). pit_universe=False 时该参数与退市模块均不被触碰.
 
         Returns:
             BacktestResult 对象
@@ -334,6 +342,15 @@ class CrossSectionalEngine:
 
         # 预提取因子面板以便快速查询
         factor_cols = list(self.factors.columns)
+
+        # PIT 无偏 universe: 惰性构造退市管理器 (仅 opt-in 时触碰退市模块/网络)
+        _delist_mgr = None
+        if pit_universe:
+            if delist_manager is not None:
+                _delist_mgr = delist_manager
+            else:
+                from tools.backtest_mvp.data.delisted import DelistManager as _DM
+                _delist_mgr = _DM()
 
         for i, rebal_date in enumerate(self.rebalance_dates):
             if i >= len(self.rebalance_dates) - 1:
@@ -359,6 +376,12 @@ class CrossSectionalEngine:
                 selected = universe_filter(snapshot, self.dates, i)
             else:
                 selected = available_stocks
+
+            # PIT 无偏 universe 过滤 (opt-in): 剔除截至调仓日已退市的标的
+            if _delist_mgr is not None:
+                dead_set = set(_delist_mgr.get_delisted_before(rebal_date))
+                if dead_set:
+                    selected = [s for s in selected if s not in dead_set]
 
 
             # 涨跌停过滤: 排除涨停股 (买不到)
