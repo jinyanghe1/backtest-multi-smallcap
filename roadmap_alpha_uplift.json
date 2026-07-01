@@ -210,6 +210,7 @@
         {
           "id": "UA1",
           "title": "Point-in-time survivorship-free universe",
+          "status": "partial — opt-in pit_universe flag wired into canonical engine.py run() (commit 3046230, 10 offline tests); default off = byte-identical. Full survivorship correction still needs the data layer to include delisted names in the panel.",
           "rationale": "Current 586-name universe is today's survivors; delisted/long-suspended micro-caps silently dropped -> the most dangerous bias in micro-cap.",
           "method": "Acquire delisted-name list + listing/delisting dates; build as-of universe membership per rebalance date; re-run all strategies; report the Sharpe delta.",
           "data_needed": "DS9 (delist list)",
@@ -226,6 +227,7 @@
         {
           "id": "UA2",
           "title": "ADV / square-root market-impact cost model + capacity cap",
+          "status": "deferred — canonical engine.py still uses flat 0.2% slippage; ADV impact needs per-stock ADV plumbing into the rebalance cost loop (higher-risk edit). data/adv_impact.py ready; backlog for next slice.",
           "rationale": "Flat 0.2% slippage is unrealistic for thin micro-caps.",
           "method": "impact_bps = k * sqrt(order_value / ADV_value); ADV from amount=close*volume; cap position at <= c% of 20d ADV; expose capacity_wan in result.",
           "data_needed": "amount/ADV (DS1)",
@@ -672,6 +674,15 @@
       ],
       "validation": "131 tests pass (test_factors_p0..p4 + operators + shareholders), zero regression; workbuddy env (Py3.13).",
       "still_top_pending": "WS-A credibility (UA1 PIT-universe, UA2 ADV-impact, UD1 risk-overlay) implemented in data/ but wired ONLY into p0_engine_v2.py, NOT canonical engine.py/run.py — remains the #1 gap to make the number real."
+    },
+    {
+      "date": "2026-07-01",
+      "session": "phase2-backtest-enhancement-tier4",
+      "delivered": [
+        "UA1 (partial): opt-in pit_universe / delist_manager flags added to canonical engine.py run() — per-rebalance removal of names delisted-as-of-date via data/delisted.py; default off = byte-identical to prior behavior (3046230)"
+      ],
+      "validation": "test_engine_pit_universe.py 10/10 pass (offline, synthetic + temp delist CSV); regression: test_engine_extras(20)/test_engine_fast(5, real data)/test_ic_engine(3)/test_limits(2) all green. engine.py diff = +23 additive lines, default path unchanged.",
+      "still_top_pending": "UA2 ADV-impact cost model (flat 0.2% slippage still in canonical engine; needs per-stock ADV in cost loop) and UD1 risk-overlay remain unwired into canonical engine — next credibility slice."
     }
   ]
 }

@@ -38,3 +38,24 @@ numpy2.5/pandas3.0，scipy/akshare 可用）。验证：131 tests pass
 - **WS-A 可信度基建**（UA1 PIT-universe / UA2 ADV-impact / UD1 risk-overlay）
   已在 `data/` 实现，但**仅接入 `p0_engine_v2.py`，未接入 canonical
   `engine.py`/`run.py`** —— 仍是"让数字变真"的第一优先缺口。
+
+## 2026-07-01 — Phase 2 Tier 4：canonical 引擎 opt-in 可信度切片
+
+### 新增 (Added)
+- **PIT 无偏 universe 开关**（roadmap UA1，commit `3046230`）：
+  `engine.py` 的 `run()` 新增两个**向后兼容**参数（默认关 = 字节级复现原行为，
+  零回归）：
+  - `pit_universe: bool = False` —— True 时每个调仓日剔除"截至该日已退市"标的，
+    委托 `data/delisted.py` 的 `DelistManager.get_delisted_before(date)`；
+    惰性构造，仅 opt-in 时才 import 退市模块 / 触网。
+  - `delist_manager: DelistManager | None = None` —— 可注入（测试/自定义缓存）。
+  - 诚实边界：仅能剔除 panel 中**已含**的已退市标的；完整无偏还需数据层纳入退市
+    标的（与 `p0_engine_v2.py` 现有实现一致）。
+  - 测试 `test_engine_pit_universe.py`（10 例，合成 + 临时退市 CSV，全离线）。
+  - 回归：`test_engine_extras(20)`/`test_engine_fast(5, 实盘数据)`/
+    `test_ic_engine(3)`/`test_limits(2)` 全绿；`engine.py` diff = +23 加法行。
+
+### 仍待处理 (Top pending)
+- **UA2 ADV 平方根冲击成本** + **UD1 风险护栏** 仍未接入 canonical 引擎
+  （固定 0.2% 滑点仍在用）——下一个可信度切片（`data/adv_impact.py` /
+  `data/risk_overlay.py` 已就绪，需接入 `run()` 成本循环 / 仓位构建）。
