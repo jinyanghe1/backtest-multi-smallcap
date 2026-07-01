@@ -9,6 +9,7 @@ daily_mcap_pb_cache/
 benchmarks/
 shareholders_cache/
 logs/
+reports/
 hk_smallcap_list.parquet
 .workbuddy/
 name_lookup.parquet
