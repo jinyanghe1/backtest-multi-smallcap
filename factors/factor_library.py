@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import logging
 from typing import Optional
 
 from .operators import (
@@ -605,6 +606,160 @@ def analyst_revision(panel: pd.DataFrame) -> pd.Series:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# P4  Academic Anomalies (6)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def fifty_two_week_high_proximity(panel: pd.DataFrame, window: int = 252) -> pd.Series:
+    """F031: 52-week high proximity.
+
+    Formula: rank( close / ts_max(high, 252) )
+    Logic: Prices near their 52-week high anchor continue to outperform
+           (George & Hwang 2004).
+    Expected IC: positive, IC ~ 0.02-0.04
+    """
+    close = panel["close"]
+    high = panel.get("high", close)
+
+    rolling_high = _group_apply(
+        high, "symbol", lambda s: s.rolling(window, min_periods=min(60, window)).max()
+    )
+    proximity = close / rolling_high.replace(0, np.nan)
+    return rank(proximity)
+
+
+def seasonality_same_month(panel: pd.DataFrame) -> pd.Series:
+    """F032: Same-calendar-month return seasonality.
+
+    Formula: rank( expanding_mean_prior_years(monthly_return | month_of_year) )
+    Logic: Stocks with high historical returns in the same calendar month
+           tend to repeat that seasonal pattern (Heston & Sadka 2008).
+    Expected IC: positive, IC ~ 0.01-0.03
+    """
+    close = panel["close"]
+    values = pd.Series(np.nan, index=panel.index, dtype=float)
+
+    for symbol, s in close.groupby(level="symbol", group_keys=False):
+        daily = s.droplevel("symbol").sort_index()
+        periods = daily.index.to_period("M")
+        monthly = daily.groupby(periods).last().pct_change()
+        history = monthly.groupby(monthly.index.month, group_keys=False).apply(
+            lambda x: x.expanding(min_periods=1).mean().shift(1)
+        )
+        mapped = pd.Series(periods.map(history.to_dict()), index=daily.index, dtype=float)
+        values.loc[pd.MultiIndex.from_arrays([daily.index, [symbol] * len(daily)], names=panel.index.names)] = mapped.values
+
+    return rank(values)
+
+
+def downside_beta(panel: pd.DataFrame, window: int = 90) -> pd.Series:
+    """F033: Downside beta.
+
+    Formula: -rank( cov(r_i, r_m | r_m < 0) / var(r_m | r_m < 0) )
+    Logic: High sensitivity on market-down days is crash risk (Ang, Chen &
+           Xing 2006), so higher downside beta predicts lower future returns.
+    Expected IC: negative, |IC| ~ 0.02-0.04
+    """
+    close = panel["close"]
+    ret = close.groupby(level="symbol", group_keys=False).pct_change()
+    market_ret = ret.groupby(level="date").transform("mean")
+
+    downside_mask = market_ret < 0
+    downside_ret = ret.where(downside_mask)
+    downside_mkt = market_ret.where(downside_mask)
+    cov = _group_apply(
+        pd.DataFrame({"ret": downside_ret, "mkt": downside_mkt}),
+        "symbol",
+        lambda df: df["ret"].rolling(window, min_periods=max(20, window // 3)).cov(df["mkt"]),
+    )
+    var_mkt = _group_apply(
+        downside_mkt, "symbol", lambda s: s.rolling(window, min_periods=max(20, window // 3)).var()
+    )
+    beta = cov / var_mkt.replace(0, np.nan)
+    return -rank(beta)
+
+
+def information_discreteness(panel: pd.DataFrame, window: int = 60) -> pd.Series:
+    """F034: Information discreteness momentum quality.
+
+    Formula: 0.4 * rank(PRET) + 0.6 * rank(-ID), ID = sign(PRET) * (%neg_days - %pos_days)
+    Logic: Continuous information ("frog in the pan") makes momentum persist
+           more than discrete jumps (Da, Gurun & Warachka 2014).
+    Expected IC: positive, IC ~ 0.02-0.04
+    """
+    close = panel["close"]
+    ret = close.groupby(level="symbol", group_keys=False).pct_change()
+    pret = close.groupby(level="symbol", group_keys=False).pct_change(window)
+    pos_frac = _group_apply(ret.gt(0).astype(float), "symbol", lambda s: s.rolling(window, min_periods=20).mean())
+    neg_frac = _group_apply(ret.lt(0).astype(float), "symbol", lambda s: s.rolling(window, min_periods=20).mean())
+    id_score = np.sign(pret) * (neg_frac - pos_frac)
+    return 0.4 * rank(pret) + 0.6 * rank(-id_score)
+
+
+def prospect_theory_value(panel: pd.DataFrame, window: int = 60) -> pd.Series:
+    """F035: Prospect theory value.
+
+    Formula: -rank( sum(rank_weighted_probability * TK_value(ret)) )
+    Logic: High Tversky-Kahneman value of recent returns is overvalued by
+           investors and predicts lower returns (Barberis et al. 2016).
+    Expected IC: negative, |IC| ~ 0.02-0.04
+    """
+    close = panel["close"]
+    ret = close.groupby(level="symbol", group_keys=False).pct_change()
+
+    def _tk_value(values) -> float:
+        arr = np.asarray(values, dtype=float)
+        arr = arr[~np.isnan(arr)]
+        n = len(arr)
+        if n < max(20, window // 3):
+            return np.nan
+
+        def _weight(p: np.ndarray, gamma: float) -> np.ndarray:
+            return (p ** gamma) / ((p ** gamma + (1 - p) ** gamma) ** (1 / gamma))
+
+        total = 0.0
+        gains = np.sort(arr[arr >= 0])[::-1]
+        if len(gains):
+            p_hi = np.arange(1, len(gains) + 1, dtype=float) / n
+            p_lo = np.arange(0, len(gains), dtype=float) / n
+            weights = _weight(p_hi, 0.61) - _weight(p_lo, 0.61)
+            total += float(np.dot(weights, gains ** 0.88))
+
+        losses = np.sort(arr[arr < 0])
+        if len(losses):
+            p_hi = np.arange(1, len(losses) + 1, dtype=float) / n
+            p_lo = np.arange(0, len(losses), dtype=float) / n
+            weights = _weight(p_hi, 0.69) - _weight(p_lo, 0.69)
+            total += float(np.dot(weights, -2.25 * ((-losses) ** 0.88)))
+
+        return total
+
+    tk = _group_apply(ret, "symbol", lambda s: s.rolling(window, min_periods=20).apply(_tk_value, raw=True))
+    return -rank(tk)
+
+
+def trailing_max_drawdown(panel: pd.DataFrame, window: int = 60) -> pd.Series:
+    """F036: Trailing maximum drawdown reversal.
+
+    Formula: rank( abs( min(cum_return / running_max(cum_return) - 1) ) )
+    Logic: Deep trailing drawdowns proxy for path-dependent distress and may
+           rebound in A-share retail overreaction episodes.
+    Expected IC: positive, IC ~ 0.01-0.03
+    """
+    close = panel["close"]
+
+    def _maxdd(values) -> float:
+        arr = np.asarray(values, dtype=float)
+        if np.isnan(arr).any() or len(arr) < 20:
+            return np.nan
+        running_max = np.maximum.accumulate(arr)
+        drawdown = arr / running_max - 1.0
+        return float(abs(np.min(drawdown)))
+
+    maxdd = _group_apply(close, "symbol", lambda s: s.rolling(window, min_periods=20).apply(_maxdd, raw=True))
+    return rank(maxdd)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Factor registry for automated discovery
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -643,10 +798,17 @@ FACTOR_REGISTRY = {
     "F026": tail_return_spread,
     "F029": rd_intensity,
     "F030": analyst_revision,
+    # P4 Academic
+    "F031": fifty_two_week_high_proximity,
+    "F032": seasonality_same_month,
+    "F033": downside_beta,
+    "F034": information_discreteness,
+    "F035": prospect_theory_value,
+    "F036": trailing_max_drawdown,
 }
 
 
-def compute_all_factors(panel: pd.DataFrame) -> pd.DataFrame:
+def compute_all_factors(panel: pd.DataFrame, log_errors: bool = False) -> pd.DataFrame:
     """Compute all available factors and return as a DataFrame."""
     results = {}
     for fid, func in FACTOR_REGISTRY.items():
@@ -654,6 +816,8 @@ def compute_all_factors(panel: pd.DataFrame) -> pd.DataFrame:
             result = func(panel)
             if result is not None and not result.isna().all():
                 results[fid] = result
-        except Exception:
+        except Exception as exc:
+            if log_errors:
+                logging.getLogger(__name__).warning("Factor %s failed: %s", fid, exc)
             pass  # Skip factors that fail (e.g., missing financial data)
     return pd.DataFrame(results)

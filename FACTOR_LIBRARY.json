@@ -1155,6 +1155,231 @@
       "priority": "P3",
       "dependencies": ["F004", "F027"],
       "estimated_effort": "1.5h"
+    },
+    {
+      "id": "F031",
+      "name": "52周高点接近度",
+      "category": "动量/锚定",
+      "source_papers": ["George & Hwang (2004)"],
+      "a_share_validation": "中(A股趋势与价格锚定效应显著)",
+      "definition": {
+        "formula": "rank(close / ts_max(high, 252))",
+        "explanation": "当前收盘价距离过去252日最高价越近，投资者锚定在52周高点附近，趋势延续概率越高。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": ["close", "high"],
+      "derived_fields": ["rolling_52w_high", "proximity"],
+      "calculation": {
+        "steps": [
+          "1. rolling_high = ts_max(high, 252)",
+          "2. proximity = close / rolling_high",
+          "3. 因子 = rank(proximity)"
+        ],
+        "python_signature": "def fifty_two_week_high_proximity(panel: pd.DataFrame, window: int = 252) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.05 to +0.15",
+        "drawdown_impact": "中性",
+        "turnover": "月度20-30%",
+        "decay_halflife": "20-60天"
+      },
+      "test_logic": [
+        "test_near_high_scores_higher: 接近52周高点股票排名更高",
+        "test_no_lookahead: 未来价格扰动不改变历史因子值"
+      ],
+      "priority": "P4",
+      "dependencies": ["F023", "F025"],
+      "estimated_effort": "1h"
+    },
+    {
+      "id": "F032",
+      "name": "同月季节性",
+      "category": "季节性",
+      "source_papers": ["Heston & Sadka (2008)"],
+      "a_share_validation": "中(A股日历效应与资金季节性较强)",
+      "definition": {
+        "formula": "rank(expanding_mean_prior_years(monthly_return | month_of_year))",
+        "explanation": "按股票和月份计算历史同一日历月收益的前序年份均值，避免使用当年当月收益。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.01 - 0.03"
+      },
+      "required_fields": ["close"],
+      "derived_fields": ["monthly_return", "same_month_prior_mean"],
+      "calculation": {
+        "steps": [
+          "1. monthly_return = last_close_this_month / last_close_previous_month - 1",
+          "2. 对每个股票和month_of_year计算expanding_mean并shift(1)",
+          "3. 映射回日频并rank"
+        ],
+        "python_signature": "def seasonality_same_month(panel: pd.DataFrame) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.03",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "中性",
+        "turnover": "月度低频",
+        "decay_halflife": "20-40天"
+      },
+      "test_logic": [
+        "test_same_month_history: 历史同月收益更高的股票排名更高",
+        "test_prior_year_shift: 当前月份收益不泄露到当月因子"
+      ],
+      "priority": "P4",
+      "dependencies": [],
+      "estimated_effort": "1.5h"
+    },
+    {
+      "id": "F033",
+      "name": "下行Beta",
+      "category": "风险",
+      "source_papers": ["Ang, Chen & Xing (2006)"],
+      "a_share_validation": "中(下跌市场中的风险暴露应获得折价)",
+      "definition": {
+        "formula": "-rank(cov(r_i, r_m | r_m < 0) / var(r_m | r_m < 0))",
+        "explanation": "仅在市场收益为负的交易日估算滚动Beta。下行Beta越高，尾部风险越大，未来收益越低。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": ["close"],
+      "derived_fields": ["daily_return", "market_return", "downside_beta"],
+      "calculation": {
+        "steps": [
+          "1. r_m = cross_sectional_mean(daily_return)",
+          "2. 保留r_m < 0的交易日",
+          "3. downside_beta = rolling_cov(r_i, r_m) / rolling_var(r_m)",
+          "4. 因子 = -rank(downside_beta)"
+        ],
+        "python_signature": "def downside_beta(panel: pd.DataFrame, window: int = 90) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.05 to +0.15",
+        "drawdown_impact": "改善",
+        "turnover": "月度20-30%",
+        "decay_halflife": "30-60天"
+      },
+      "test_logic": [
+        "test_downside_beta_penalty: 下跌日高Beta股票排名更低",
+        "test_distinct_from_unconditional_beta: 与F021相关性较低"
+      ],
+      "priority": "P4",
+      "dependencies": ["F021"],
+      "estimated_effort": "1.5h"
+    },
+    {
+      "id": "F034",
+      "name": "信息离散度动量质量",
+      "category": "行为金融/动量",
+      "source_papers": ["Da, Gurun & Warachka (2014)"],
+      "a_share_validation": "中(A股信息扩散和涨跌停导致离散/连续信息差异)",
+      "definition": {
+        "formula": "0.4 * rank(PRET) + 0.6 * rank(-ID), ID = sign(PRET) * (%neg_days - %pos_days)",
+        "explanation": "同等过去收益下，连续小幅上涨比少数跳涨更具动量持续性，作为动量质量调整。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": ["close"],
+      "derived_fields": ["PRET", "positive_day_fraction", "negative_day_fraction", "ID"],
+      "calculation": {
+        "steps": [
+          "1. PRET = close / delay(close, window) - 1",
+          "2. ID = sign(PRET) * (%neg_days - %pos_days)",
+          "3. 因子 = 0.4 * rank(PRET) + 0.6 * rank(-ID)"
+        ],
+        "python_signature": "def information_discreteness(panel: pd.DataFrame, window: int = 60) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.05 to +0.15",
+        "drawdown_impact": "中性或改善",
+        "turnover": "月度30-40%",
+        "decay_halflife": "20-40天"
+      },
+      "test_logic": [
+        "test_continuous_momentum_scores_higher: 连续上涨动量质量高于跳涨",
+        "test_distinct_from_momentum_quality: 与F025相关性较低"
+      ],
+      "priority": "P4",
+      "dependencies": ["F025"],
+      "estimated_effort": "1.5h"
+    },
+    {
+      "id": "F035",
+      "name": "前景理论价值",
+      "category": "行为金融/分布",
+      "source_papers": ["Barberis, Mukherjee & Wang (2016)"],
+      "a_share_validation": "中(A股散户占比高，彩票/损失厌恶偏好强)",
+      "definition": {
+        "formula": "-rank(sum(rank_weighted_probability * v(ret))), v(x)=x^0.88 or -2.25*(-x)^0.88",
+        "explanation": "用Tversky-Kahneman价值函数和收益概率权重评估过去收益分布。前景理论价值越高越被追捧，未来收益越低。",
+        "expected_ic_sign": "negative",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": ["close"],
+      "derived_fields": ["daily_return", "tk_value"],
+      "calculation": {
+        "steps": [
+          "1. 计算滚动日收益分布",
+          "2. gains用gamma=0.61、losses用delta=0.69进行概率加权",
+          "3. v(x)=x^0.88 (gain), -2.25*(-x)^0.88 (loss)",
+          "4. 因子 = -rank(TK_value)"
+        ],
+        "python_signature": "def prospect_theory_value(panel: pd.DataFrame, window: int = 60) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.05 to +0.15",
+        "drawdown_impact": "改善",
+        "turnover": "月度20-30%",
+        "decay_halflife": "30-60天"
+      },
+      "test_logic": [
+        "test_high_tk_penalized: 高TK价值股票排名更低",
+        "test_handles_short_history: 短历史返回NaN且不报错"
+      ],
+      "priority": "P4",
+      "dependencies": ["F002", "F026"],
+      "estimated_effort": "2h"
+    },
+    {
+      "id": "F036",
+      "name": "滚动最大回撤",
+      "category": "路径风险/反转",
+      "source_papers": ["Path-dependent risk anomaly", "A-share reversal literature"],
+      "a_share_validation": "中(A股极端下跌后常有过度反应修复)",
+      "definition": {
+        "formula": "rank(abs(min(cum_t / running_max_t - 1)))",
+        "explanation": "滚动窗口内从高点到低点的最大回撤幅度。深回撤代表路径风险和过度反应，作为反转候选信号。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.01 - 0.03"
+      },
+      "required_fields": ["close"],
+      "derived_fields": ["rolling_max_drawdown"],
+      "calculation": {
+        "steps": [
+          "1. 对窗口内close计算running_max",
+          "2. drawdown = close / running_max - 1",
+          "3. maxdd = abs(min(drawdown))",
+          "4. 因子 = rank(maxdd)"
+        ],
+        "python_signature": "def trailing_max_drawdown(panel: pd.DataFrame, window: int = 60) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.03",
+        "sharpe_lift": "+0.05 to +0.10",
+        "drawdown_impact": "可能提高波动，需风控",
+        "turnover": "月度20-40%",
+        "decay_halflife": "10-30天"
+      },
+      "test_logic": [
+        "test_deep_trough_scores_higher: 深回撤股票排名更高",
+        "test_no_lookahead: 未来深跌不影响历史因子"
+      ],
+      "priority": "P4",
+      "dependencies": ["F026"],
+      "estimated_effort": "1h"
     }
   ],
   "factor_groups": {
