@@ -453,6 +453,19 @@
           "backlog": [
             "(已完成 F043) 后续：接入 combiner 对 43 因子实测 IC/去相关合成；接入 overfitting.py 出 PBO/DSR 部署裁决。"
           ]
+        },
+        {
+          "id": "UC8",
+          "title": "因子部署裁决框架：PBO/DSR 打通 43 因子",
+          "status": "done",
+          "delivered": [
+            "research_loop/factor_deployment.py：factor_long_short_returns / build_returns_matrix / evaluate_deployment(DeploymentVerdict) + CLI",
+            "端到端：因子库→combiner(IC/去相关/composite)→overfitting(PBO/DSR/PSR)→部署裁决",
+            "min_coverage 覆盖率过滤解决多因子 warmup 错位导致公共期数坍塌问题",
+            "test_factor_deployment.py 20 例；research_loop 包 79 例零回归"
+          ],
+          "validation": "真实 A 股 100×500 日(fwd=5,T=72)：best 单因子 PSR(vs0)=0.998 但 DSR=0.44(E[max]=0.38>best0.36)、PBO=0.48 → 正确判定多重检验运气最优，裁决走 29 因子 composite(PSR=0.994)。",
+          "commit": "120a85c"
         }
       ]
     },
@@ -750,6 +763,21 @@
       "backlog": [
         "接入 combiner 对 43 因子实测 IC/去相关合成",
         "接入 overfitting.py 出 PBO/DSR 部署裁决"
+      ]
+    },
+    {
+      "date": "2026-07-01",
+      "session": "wsc-deployment-harness",
+      "delivered": [
+        "WS-C UC8：因子部署裁决框架 research_loop/factor_deployment.py，把 43 因子接入 PBO/DSR 部署裁决（backlog 收口项）。commit 120a85c。",
+        "核心：单因子多空收益矩阵→PBO(CSCV)+DSR(N 试验去膨胀)+去相关 composite Sharpe/PSR→DeploymentVerdict。",
+        "修复：build_returns_matrix 覆盖率过滤 + 矩阵级下采样，解决 warmup 错位使公共期数坍塌(T 18→72)。"
+      ],
+      "validation": "test_factor_deployment.py 20 例全绿；research_loop 包(overfitting+research_loop+combiner+deployment)79 例零回归；真实 A 股子集出裁决工件（reports/ 已 gitignore）。",
+      "insight": "验证多重检验陷阱：PSR(vs0)=0.998 的单因子经 DSR 去膨胀仅 0.44——朴素因子挖掘会误部署，应走去相关 composite + walk-forward。",
+      "backlog": [
+        "把 evaluate_deployment 接入 walk_forward.py 做滚动 OOS 复核",
+        "真实全量 universe 大样本重估（当前有界子集 T=72）"
       ]
     }
   ]

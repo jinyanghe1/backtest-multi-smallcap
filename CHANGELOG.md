@@ -3,6 +3,30 @@
 本文件记录 backtest_mvp 的高层变更。因子级细节见 `FACTOR_LIBRARY.json`，
 alpha 路线图进度见 `roadmap_alpha_uplift.json` 的 `progress_log`。
 
+## 2026-07-01 — WS-C 收口：因子部署裁决框架（PBO/DSR 打通 43 因子）
+
+### 新增 (Added)
+- **`research_loop/factor_deployment.py`**（commit `120a85c`）——把 **因子库 → 组合器
+  → 过拟合诊断** 串成端到端评估，回答量化最要命的问题："挖了 43 个因子后，IC 最高
+  的那个是真 alpha 还是运气最优？"
+  - `factor_long_short_returns`：单因子逐期多空收益（截面分位、按 IC 符号对齐方向）。
+  - `build_returns_matrix`：T×N 收益矩阵 + 每因子单期 Sharpe；`min_coverage` 覆盖率
+    过滤 + 矩阵级下采样，解决多因子 warmup 长度不一导致公共期数坍塌（T 18→72）。
+  - `evaluate_deployment` → `DeploymentVerdict`：**PBO(CSCV)** + **DSR(N 试验去膨胀)**
+    + 去相关 **composite** Sharpe/PSR + 人类可读部署裁决。
+  - CLI：`python -m tools.backtest_mvp.research_loop.factor_deployment`
+    （`--synthetic` 自检 / 有界真实子集出裁决工件）。
+  - 复用 `combiner`（IC/去相关/composite）与 `overfitting`（PBO/DSR/PSR），**零新增依赖**。
+- 测试 `test_factor_deployment.py`（20 例）；`research_loop` 包 79 例零回归。
+- `reports/` 加入 `.gitignore`（生成型裁决工件，不入库）。
+
+### 关键发现 (Insight)
+- 真实 A 股子集（100 只 × 500 日，fwd=5，**T=72**）实测：最优单因子 F026 的
+  **PSR(vs 0)=0.998**（孤立看像 99.8% 显著），但 **DSR=0.44**——去膨胀基准
+  E[max]=0.38 **超过** 最优 Sharpe 0.36，**PBO=0.48**、性能衰减斜率 −0.57。
+  → 朴素因子挖掘会误部署"运气最优"，正确路线是 **去相关 composite**（29 因子，
+  PSR=0.994）+ walk-forward 复核。这正是 Phase 3 严谨 PBO/DSR 的用武之地。
+
 ## 2026-07-01 — Phase 4b：新增 F043 价格延迟（roadmap WS-C UC7 补齐）
 
 ### 新增 (Added)
