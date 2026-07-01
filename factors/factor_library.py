@@ -760,6 +760,159 @@ def trailing_max_drawdown(panel: pd.DataFrame, window: int = 60) -> pd.Series:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# P5  Decorrelated Alpha (recent literature)  F037-F042
+# ═══════════════════════════════════════════════════════════════════════════
+
+def coskewness(panel: pd.DataFrame, window: int = 120) -> pd.Series:
+    """F037: Systematic coskewness.
+
+    Formula: -rank( E[eps_i * eps_m^2] / (std(eps_i) * var(eps_m)) )
+             eps_i = demeaned stock return, eps_m = demeaned market return,
+             market proxy = cross-sectional mean return.
+    Logic: Assets with negative coskewness (fall harder when the market is
+           already volatile) require a risk premium (Harvey & Siddique 2000;
+           Ang, Chen & Xing 2006), so low coskewness predicts higher returns.
+           Distinct from own skewness (F022, uses eps_i^3) and downside beta
+           (F033, linear comovement).
+    Expected IC: positive on -coskew, |IC| ~ 0.01-0.03
+    """
+    close = panel["close"]
+    ret = close.groupby(level="symbol", group_keys=False).pct_change()
+    market = ret.groupby(level="date").transform("mean")
+
+    mp = max(30, window // 3)
+    ret_mean = _group_apply(ret, "symbol", lambda s: s.rolling(window, min_periods=mp).mean())
+    mkt_mean = _group_apply(market, "symbol", lambda s: s.rolling(window, min_periods=mp).mean())
+    eps_i = ret - ret_mean
+    eps_m = market - mkt_mean
+
+    num = _group_apply(eps_i * eps_m ** 2, "symbol", lambda s: s.rolling(window, min_periods=mp).mean())
+    std_i = _group_apply(ret, "symbol", lambda s: s.rolling(window, min_periods=mp).std())
+    var_m = _group_apply(market, "symbol", lambda s: s.rolling(window, min_periods=mp).var())
+    coskew = num / (std_i * var_m).replace(0, np.nan)
+    return -rank(coskew)
+
+
+def overnight_intraday_tug(panel: pd.DataFrame, window: int = 21) -> pd.Series:
+    """F038: Overnight-vs-intraday return tug of war.
+
+    Formula: rank( sum(overnight_ret, w) - sum(intraday_ret, w) )
+             overnight_ret = ln(open_t / close_{t-1}), intraday_ret = ln(close_t / open_t)
+    Logic: Overnight returns (individual-driven) persist while intraday returns
+           (institution-driven) reverse, so the accumulated overnight-minus-intraday
+           spread carries a persistent signal (Lou, Polk & Skouras 2019, JFE;
+           Bogousslavsky 2021). Distinct from F012 which is a single-day gap.
+    Expected IC: positive, |IC| ~ 0.02-0.04
+    """
+    close = panel["close"]
+    open_ = panel["open"]
+    prev_close = delay(close, 1, group_level="symbol")
+
+    overnight = np.log(open_ / prev_close.replace(0, np.nan))
+    intraday = np.log(close / open_.replace(0, np.nan))
+    mp = max(5, window // 2)
+    on_cum = _group_apply(overnight, "symbol", lambda s: s.rolling(window, min_periods=mp).sum())
+    id_cum = _group_apply(intraday, "symbol", lambda s: s.rolling(window, min_periods=mp).sum())
+    return rank(on_cum - id_cum)
+
+
+def turnover_cv(panel: pd.DataFrame, window: int = 60) -> pd.Series:
+    """F039: Coefficient of variation of turnover.
+
+    Formula: -rank( std(turnover, w) / mean(turnover, w) )
+    Logic: The variability of trading activity is negatively priced (liquidity-risk
+           second moment; Chordia, Subrahmanyam & Anshuman 2001, JFE), independent
+           of the turnover LEVEL anomaly (F018). High CV predicts lower returns.
+    Expected IC: positive on -CV, |IC| ~ 0.02-0.04
+
+    Fallback: if turnover missing, proxy with volume / mcap.
+    """
+    turnover = panel.get("turnover")
+    if turnover is None or turnover.isna().all():
+        turnover = panel["volume"] / panel["mcap"].replace(0, np.nan)
+
+    mp = max(20, window // 3)
+    mean_to = _group_apply(turnover, "symbol", lambda s: s.rolling(window, min_periods=mp).mean())
+    std_to = _group_apply(turnover, "symbol", lambda s: s.rolling(window, min_periods=mp).std())
+    cv = std_to / mean_to.replace(0, np.nan)
+    return -rank(cv)
+
+
+def overnight_variance_share(panel: pd.DataFrame, window: int = 21) -> pd.Series:
+    """F040: Overnight-jump variance share (range decomposition).
+
+    Formula: rank( overnight_var / (overnight_var + intraday_var) )
+             overnight_var = var(ln(open_t/close_{t-1}), w)
+             intraday_var  = mean( (ln(high/low))^2 / (4*ln2), w )   [Parkinson 1980]
+    Logic: A scale-free measure of how much of a stock's total variance comes from
+           overnight gap risk vs intraday range. First factor to use the high-low
+           range; being a ratio it is decorrelated from raw volatility level (F006).
+    Expected IC: sign empirical (combiner IC-aligned)
+    """
+    close = panel["close"]
+    open_ = panel["open"]
+    high = panel.get("high", close)
+    low = panel.get("low", close)
+    prev_close = delay(close, 1, group_level="symbol")
+
+    overnight = np.log(open_ / prev_close.replace(0, np.nan))
+    parkinson = (np.log(high / low.replace(0, np.nan)) ** 2) / (4.0 * np.log(2.0))
+    mp = max(5, window // 2)
+    on_var = _group_apply(overnight, "symbol", lambda s: s.rolling(window, min_periods=mp).var())
+    id_var = _group_apply(parkinson, "symbol", lambda s: s.rolling(window, min_periods=mp).mean())
+    share = on_var / (on_var + id_var).replace(0, np.nan)
+    return rank(share)
+
+
+def time_under_water(panel: pd.DataFrame, window: int = 60) -> pd.Series:
+    """F041: Time under water (drawdown duration).
+
+    Formula: rank( fraction of last w days where close < running max(close, w) )
+    Logic: Path-dependent risk — the DURATION a stock spends below its recent high
+           water mark, distinct from the drawdown MAGNITUDE (F036). Persistent
+           underwater time proxies for distress / lagging sentiment.
+    Expected IC: sign empirical (combiner IC-aligned)
+    """
+    close = panel["close"]
+
+    def _tuw(values) -> float:
+        arr = np.asarray(values, dtype=float)
+        if np.isnan(arr).any() or len(arr) < 20:
+            return np.nan
+        running_max = np.maximum.accumulate(arr)
+        return float(np.mean(arr < running_max))
+
+    tuw = _group_apply(close, "symbol", lambda s: s.rolling(window, min_periods=20).apply(_tuw, raw=True))
+    return rank(tuw)
+
+
+def delta_amihud(panel: pd.DataFrame, window: int = 21) -> pd.Series:
+    """F042: Change in Amihud illiquidity.
+
+    Formula: rank( (illiq_recent - illiq_prior) / illiq_prior )
+             illiq = mean( abs(ret) / amount, w );
+             recent = last w days, prior = the w days before that (non-overlapping).
+    Logic: The TREND in illiquidity, not the level (F011). A repricing of liquidity
+           risk / attention shift is informative beyond the static Amihud measure
+           (Amihud 2002; time-varying illiquidity literature).
+    Expected IC: sign empirical (combiner IC-aligned)
+
+    Fallback: if amount missing, proxy with volume * close.
+    """
+    close = panel["close"]
+    amount = panel.get("amount")
+    if amount is None or amount.isna().all():
+        amount = panel["volume"] * close
+
+    ret = close.groupby(level="symbol", group_keys=False).pct_change().abs()
+    illiq = ret / amount.replace(0, np.nan)
+    recent = _group_apply(illiq, "symbol", lambda s: s.rolling(window, min_periods=max(5, window // 2)).mean())
+    prior = delay(recent, window, group_level="symbol")
+    delta = (recent - prior) / prior.replace(0, np.nan)
+    return rank(delta)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Factor registry for automated discovery
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -805,6 +958,13 @@ FACTOR_REGISTRY = {
     "F034": information_discreteness,
     "F035": prospect_theory_value,
     "F036": trailing_max_drawdown,
+    # P5 Decorrelated Alpha (recent literature)
+    "F037": coskewness,
+    "F038": overnight_intraday_tug,
+    "F039": turnover_cv,
+    "F040": overnight_variance_share,
+    "F041": time_under_water,
+    "F042": delta_amihud,
 }
 
 
