@@ -438,7 +438,8 @@
             "F039 换手率变异系数",
             "F040 隔夜跳空方差占比(首用 high-low 区间)",
             "F041 水下时间/回撤持续期",
-            "F042 非流动性变化 Δ-Amihud"
+            "F042 非流动性变化 Δ-Amihud",
+            "F043 价格延迟 Price delay (Hou-Moskowitz 2005, RFS) — 信息扩散族，滚动嵌套 OLS"
           ],
           "expected_impact": "净新去相关 alpha 候选，供 combiner(UC3/UD3) IC 加权合成；各因子与最近邻既有因子在真实截面数据上目标 |corr|<0.4。",
           "effort": "0.5d",
@@ -450,7 +451,7 @@
             "test_factors_p5.py"
           ],
           "backlog": [
-            "F043 价格延迟 Price delay (Hou-Moskowitz 2005): 嵌套滚动 OLS(市场代理+4阶滞后)，delay=1−R²_restricted/R²_full；计算较重，延后。"
+            "(已完成 F043) 后续：接入 combiner 对 43 因子实测 IC/去相关合成；接入 overfitting.py 出 PBO/DSR 部署裁决。"
           ]
         }
       ]
@@ -734,6 +735,20 @@
       "backlog": [
         "F043 价格延迟(Hou-Moskowitz 2005) 因嵌套回归计算较重延后",
         "接入 combiner 对 42 因子实测 IC/去相关合成",
+        "接入 overfitting.py 出 PBO/DSR 部署裁决"
+      ]
+    },
+    {
+      "date": "2026-07-01",
+      "session": "phase4-price-delay-followup",
+      "delivered": [
+        "WS-C UC7 补齐延后项：新增 F043 价格延迟 Price delay（Hou-Moskowitz 2005, RFS）——独立信息扩散 family。commit 7849047(因子+4测试)。",
+        "delay=1−R²_restricted/R²_full（限制模型 r_i~r_m vs 完整模型含 r_m 4 阶滞后）；逐 symbol 滚动嵌套 OLS。",
+        "FACTOR_REGISTRY 42→43；FACTOR_LIBRARY.json v1.2→v1.3。"
+      ],
+      "validation": "workbuddy env: test_factors_p5.py 29 例全绿(+4)；实测 F043 与 F025/F034/F016/F023 |corr|<0.03（P5 中去相关最佳）；timing 12×900 约 1.3s；构造性单调(滞后响应股 delay 更高)通过。",
+      "backlog": [
+        "接入 combiner 对 43 因子实测 IC/去相关合成",
         "接入 overfitting.py 出 PBO/DSR 部署裁决"
       ]
     }

@@ -3,6 +3,21 @@
 本文件记录 backtest_mvp 的高层变更。因子级细节见 `FACTOR_LIBRARY.json`，
 alpha 路线图进度见 `roadmap_alpha_uplift.json` 的 `progress_log`。
 
+## 2026-07-01 — Phase 4b：新增 F043 价格延迟（roadmap WS-C UC7 补齐）
+
+### 新增 (Added)
+- **F043 价格延迟** `price_delay`（Hou-Moskowitz 2005, RFS，commit `7849047` 因子+测试、
+  JSON v1.3）——补齐 Phase 4 延后项，**独立的信息扩散 family**：
+  - `delay = 1 − R²_restricted / R²_full`，限制模型 `r_i = a + b0·r_m`，
+    完整模型 `r_i = a + b0·r_m + Σ_{k=1..4} b_k·r_m(−k)`，市场代理=截面均值收益。
+  - 逻辑：价格对市场信息滞后响应（高 delay）的股票关注度低、扩散慢，获得溢价。
+  - 实现：逐 symbol 滚动嵌套 OLS（numpy lstsq），min_periods 护栏；面向研究/中等
+    universe（全量 survivorship 热循环慎用）。
+  - `FACTOR_REGISTRY` 42→43；`FACTOR_LIBRARY.json` v1.2→v1.3。
+  - 测试 `test_factors_p5.py` +4 例（29 全绿）：滞后响应股 delay 排名更高（构造性单调，
+    LAGGED 1.000 > CONTEMP 0.900）、无前视、与 F025 去相关、集成。
+  - **实测去相关最佳**：|corr| vs F025/F034/F016/F023 均 <0.03（确为独立 family）。
+
 ## 2026-07-01 — Phase 4：新增去相关 Alpha 因子 F037-F042（roadmap WS-C UC7）
 
 ### 新增 (Added)
@@ -33,8 +48,8 @@ alpha 路线图进度见 `roadmap_alpha_uplift.json` 的 `progress_log`。
   相关 ~0.5（区间比值 / 回撤族在随机游走上人为相关），实盘截面数据预期显著更低。
 
 ### 仍待处理 (Top pending)
-- **F043 价格延迟**（Hou-Moskowitz 2005）因嵌套滚动回归计算较重，延后（登记 roadmap backlog）。
-- 接入 `combiner` 对 42 因子实测 IC / 去相关合成；接入 `overfitting.py` 出 PBO/DSR 部署裁决。
+- **F043 价格延迟**（Hou-Moskowitz 2005）已在 Phase 4b 补齐（见上）。
+- 接入 `combiner` 对 43 因子实测 IC / 去相关合成；接入 `overfitting.py` 出 PBO/DSR 部署裁决。
 
 ## 2026-07-01 — Phase 3：严谨过拟合诊断（roadmap UA3）
 

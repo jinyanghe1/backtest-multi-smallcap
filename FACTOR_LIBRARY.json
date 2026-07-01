@@ -1,6 +1,6 @@
 {
   "project": "backtest_mvp Factor Library (36 Alpha Factors)",
-  "version": "v1.2",
+  "version": "v1.3",
   "date": "2026-07-01",
   "source_papers": [
     "Kakushadze (2016) - 101 Formulaic Alphas",
@@ -37,7 +37,8 @@
     "Lou, Polk & Skouras (2019) - A Tug of War: Overnight vs Intraday Expected Returns",
     "Chordia, Subrahmanyam & Anshuman (2001) - Trading Activity and Expected Stock Returns",
     "Parkinson (1980) - The Extreme Value Method for Estimating the Variance of the Rate of Return",
-    "Amihud (2002) - Illiquidity and Stock Returns: Cross-Section and Time-Series Effects"
+    "Amihud (2002) - Illiquidity and Stock Returns: Cross-Section and Time-Series Effects",
+    "Hou & Moskowitz (2005) - Market Frictions, Price Delay, and the Cross-Section of Expected Returns"
   ],
   "factors": [
     {
@@ -2027,6 +2028,55 @@
       ],
       "estimated_effort": "1h",
       "decorrelation_note": "区别于 F011 Amihud 水平：本因子是变化量(趋势)而非水平。"
+    },
+    {
+      "id": "F043",
+      "name": "价格延迟",
+      "category": "信息扩散/关注度",
+      "source_papers": [
+        "Hou & Moskowitz (2005)"
+      ],
+      "a_share_validation": "中(A股小盘/低关注股信息扩散更慢，延迟溢价存在)",
+      "definition": {
+        "formula": "rank( 1 - R2_restricted / R2_full )",
+        "explanation": "限制模型 r_i=a+b0·r_m 与完整模型 r_i=a+b0·r_m+Σ_{k=1..4}b_k·r_m(-k) 的 R² 之比。价格对市场信息滞后响应(高 delay)的股票关注度低、扩散慢，获得溢价。市场代理=截面均值收益。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.01 - 0.03"
+      },
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "market_return",
+        "market_return_lags",
+        "price_delay"
+      ],
+      "calculation": {
+        "steps": [
+          "1. ret=close.pct_change，市场代理=截面均值收益 r_m",
+          "2. 构造 r_m 的 1..4 阶滞后列",
+          "3. 逐 symbol 滚动窗口：限制回归 r_i~1+r_m 得 R2_restricted=corr(r_i,r_m)^2",
+          "4. 完整回归 r_i~1+r_m+lag1..4 (numpy lstsq) 得 R2_full=1-SSR/SST",
+          "5. delay=1-R2_restricted/R2_full；因子=rank(delay)"
+        ],
+        "python_signature": "def price_delay(panel: pd.DataFrame, window: int = 120, n_lags: int = 4) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.03",
+        "sharpe_lift": "+0.03 to +0.08",
+        "drawdown_impact": "中性(独立 family，去相关分散)",
+        "turnover": "月度20-40%",
+        "decay_halflife": "20-40天"
+      },
+      "test_logic": [
+        "test_lagged_responder_scores_higher_delay: 滞后响应股 delay 排名更高",
+        "test_no_lookahead: 未来行情不改历史因子"
+      ],
+      "priority": "P5",
+      "dependencies": [],
+      "estimated_effort": "1h",
+      "decorrelation_note": "独立信息扩散 family，实测与动量/趋势/信息离散度因子 |corr|<0.03（合成面板），显著优于其余 P5 因子。",
+      "performance_note": "逐 symbol 滚动嵌套 OLS，面向研究/中等 universe；全量 survivorship 面板热循环慎用。"
     }
   ],
   "factor_groups": {
@@ -2082,7 +2132,8 @@
       "F039",
       "F040",
       "F041",
-      "F042"
+      "F042",
+      "F043"
     ]
   },
   "implementation_plan": {
