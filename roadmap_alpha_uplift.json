@@ -243,6 +243,7 @@
         {
           "id": "UA3",
           "title": "Deflated Sharpe + trial accounting",
+          "status": "partial — rigorous PSR/DSR (skew/kurt-adjusted) + E[max] deflation + PBO via CSCV delivered in research_loop/overfitting.py (commit 1bd523f, 27 offline tests). Supersedes the crude haircut in deflated_sharpe.py (kept for back-compat). Remaining: wire into the factor-zoo evaluator to report empirical PBO/DSR across the 36 factors + N strategy variants.",
           "rationale": "19 strategies -> selection bias inflates the winner.",
           "method": "Implement Deflated Sharpe Ratio (Bailey & Lopez de Prado); record n_trials; haircut reported Sharpe; add to validators.",
           "data_needed": "none",
@@ -683,6 +684,15 @@
       ],
       "validation": "test_engine_pit_universe.py 10/10 pass (offline, synthetic + temp delist CSV); regression: test_engine_extras(20)/test_engine_fast(5, real data)/test_ic_engine(3)/test_limits(2) all green. engine.py diff = +23 additive lines, default path unchanged.",
       "still_top_pending": "UA2 ADV-impact cost model (flat 0.2% slippage still in canonical engine; needs per-stock ADV in cost loop) and UD1 risk-overlay remain unwired into canonical engine — next credibility slice."
+    },
+    {
+      "date": "2026-07-01",
+      "session": "phase3-overfitting-diagnostics",
+      "delivered": [
+        "UA3 (partial): rigorous multiple-testing / backtest-overfitting statistics in research_loop/overfitting.py — probabilistic_sharpe_ratio (skew/kurt-adjusted PSR), expected_maximum_sharpe (Bailey–LdP extreme-value E[max] deflation benchmark, N=1 guard), deflated_sharpe_ratio (true DSR = PSR vs E[max]), probability_of_backtest_overfitting (PBO via CSCV), overfitting_report (1bd523f). Supersedes the crude haircut in deflated_sharpe.py, which is retained unchanged for back-compat."
+      ],
+      "validation": "test_overfitting.py 27/27 pass (offline, deterministic synthetic). Analytical properties verified: PSR monotonicity + benchmark=0.5 + skew/kurt sign; E[max] grows with N, zero at N=1/var=0; DSR deflation logic; PBO ≈0 for a dominant strategy, mean ≈0.48 over 16 pure-noise draws, =1.0 for a constructed overfit, C(S,S/2) combinatorics, input validation, no RankWarning. New module only — structurally zero regression (no engine/data edits).",
+      "still_top_pending": "Wire overfitting.py into the factor-zoo evaluator (empirical PBO/DSR across the 36 factors + strategy variants) to produce an honest deploy/no-deploy verdict. UA2 ADV-impact + UD1 risk-overlay still unwired into canonical engine."
     }
   ]
 }

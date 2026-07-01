@@ -3,6 +3,31 @@
 本文件记录 backtest_mvp 的高层变更。因子级细节见 `FACTOR_LIBRARY.json`，
 alpha 路线图进度见 `roadmap_alpha_uplift.json` 的 `progress_log`。
 
+## 2026-07-01 — Phase 3：严谨过拟合诊断（roadmap UA3）
+
+### 新增 (Added)
+- **严谨多重检验 / 回测过拟合统计**（roadmap UA3，commit `1bd523f`）：
+  新建 `research_loop/overfitting.py`，取代 `deflated_sharpe.py` 的粗糙 haircut
+  近似（`DSR≈SR−ln(N)/(4√T)`，其 significance 分布假设不成立）。**不改旧模块**
+  （`p0_engine_v2.py` 仍可用），结构性零回归。
+  - `probabilistic_sharpe_ratio` —— 含偏度/峰度修正的 PSR
+    `= Φ[(SR−SR*)·√(n−1) / √(1−γ3·SR+(γ4−1)/4·SR²)]`。
+  - `expected_maximum_sharpe` —— Bailey–López de Prado 极值近似
+    `E[max_N SR] = √Var·[(1−γ)Φ⁻¹(1−1/N)+γΦ⁻¹(1−1/(Ne))]`（N=1 护栏）。
+  - `deflated_sharpe_ratio` —— 真 DSR = `PSR(SR*=E[max])`；
+    `deflated_sharpe_from_trials` 便捷入口（自动取 best/N/Var）。
+  - `probability_of_backtest_overfitting` —— **PBO via CSCV**（组合对称交叉验证）：
+    IS 最优策略的 OOS 相对秩 → logit → `PBO = P(λ≤0)`，附性能衰减斜率 /
+    P(OOS<0) / OOS 秩中位数。
+  - `overfitting_report` + `__main__` 离线自检。
+  - 测试 `test_overfitting.py`（27 例，全合成确定性）：PSR 单调性/基准=0.5/
+    偏度峰度符号；E[max] 随 N 增长与 N=1/零方差边界；DSR 去膨胀逻辑；
+    PBO（占优≈0.09 / 16-seed 均值≈0.48 / 构造过拟合=1.0 / `C(S,S/2)` / 输入校验）。
+
+### 仍待处理 (Top pending)
+- 把 `overfitting.py` 接入因子 zoo 评价器，对 36 因子 + 策略变体**实测** PBO/DSR，
+  产出诚实的"可否部署"裁决（backlog）。
+
 ## 2026-07-01 — Phase 2：因子组合化 + 数据真实化
 
 运行时：`~/.workbuddy/binaries/python/envs/default/bin/python`（Py3.13，
