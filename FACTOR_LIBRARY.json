@@ -1,6 +1,6 @@
 {
   "project": "backtest_mvp Factor Library (36 Alpha Factors)",
-  "version": "v1.1",
+  "version": "v1.2",
   "date": "2026-07-01",
   "source_papers": [
     "Kakushadze (2016) - 101 Formulaic Alphas",
@@ -32,7 +32,12 @@
     "Chordia et al. (2000) - Trading Volume and Cross-Autocorrelations in Stock Returns",
     "Hong & Stein (1999) - A Unified Theory of Underreaction, Momentum, and Overreaction",
     "Moskowitz & Grinblatt (1999) - Do Industries Explain Momentum?",
-    "Daniel & Titman (2006) - Market Reactions to Tangible and Intangible Information"
+    "Daniel & Titman (2006) - Market Reactions to Tangible and Intangible Information",
+    "Harvey & Siddique (2000) - Conditional Skewness in Asset Pricing Tests",
+    "Lou, Polk & Skouras (2019) - A Tug of War: Overnight vs Intraday Expected Returns",
+    "Chordia, Subrahmanyam & Anshuman (2001) - Trading Activity and Expected Stock Returns",
+    "Parkinson (1980) - The Extreme Value Method for Estimating the Variance of the Rate of Return",
+    "Amihud (2002) - Illiquidity and Stock Returns: Cross-Section and Time-Series Effects"
   ],
   "factors": [
     {
@@ -1745,6 +1750,283 @@
         "F026"
       ],
       "estimated_effort": "1h"
+    },
+    {
+      "id": "F037",
+      "name": "系统性协偏度",
+      "category": "高阶矩/系统风险",
+      "source_papers": [
+        "Harvey & Siddique (2000)",
+        "Ang, Chen & Xing (2006)"
+      ],
+      "a_share_validation": "中(A股崩盘相关性高，协偏溢价存在)",
+      "definition": {
+        "formula": "-rank( E[eps_i*eps_m^2] / (std(eps_i)*var(eps_m)) )",
+        "explanation": "股票收益与市场收益平方的共动(系统性三阶共矩)。负协偏(市场动荡时跌更狠)要求风险补偿，故低协偏预测高收益。市场代理=截面均值收益。",
+        "expected_ic_sign": "positive(on -coskew)",
+        "expected_ic_magnitude": "0.01 - 0.03"
+      },
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "market_return",
+        "coskewness"
+      ],
+      "calculation": {
+        "steps": [
+          "1. ret=close.pct_change，市场代理=截面均值",
+          "2. 滚动去均值得 eps_i, eps_m",
+          "3. num=mean(eps_i*eps_m^2)",
+          "4. coskew=num/(std_i*var_m)",
+          "5. 因子=-rank(coskew)"
+        ],
+        "python_signature": "def coskewness(panel: pd.DataFrame, window: int = 120) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.03",
+        "sharpe_lift": "+0.03 to +0.08",
+        "drawdown_impact": "中性(去相关分散)",
+        "turnover": "月度20-40%",
+        "decay_halflife": "10-30天"
+      },
+      "test_logic": [],
+      "priority": "P5",
+      "dependencies": [
+        "F022"
+      ],
+      "estimated_effort": "1h",
+      "decorrelation_note": "区别于 F022 自身偏度(eps_i^3)与 F033 下行beta(线性共动)：协偏是系统性三阶共矩。"
+    },
+    {
+      "id": "F038",
+      "name": "隔夜-日内收益拉锯",
+      "category": "隔夜异象/动量",
+      "source_papers": [
+        "Lou, Polk & Skouras (2019)",
+        "Bogousslavsky (2021)"
+      ],
+      "a_share_validation": "中高(A股散户隔夜、机构日内，拉锯明显)",
+      "definition": {
+        "formula": "rank( sum(overnight_ret, w) - sum(intraday_ret, w) )",
+        "explanation": "隔夜收益 ln(open_t/close_{t-1}) 持续、日内收益 ln(close_t/open_t) 反转，累积(隔夜−日内) spread 携带持续信号。",
+        "expected_ic_sign": "positive",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": [
+        "open",
+        "close"
+      ],
+      "derived_fields": [
+        "overnight_return",
+        "intraday_return"
+      ],
+      "calculation": {
+        "steps": [
+          "1. overnight=ln(open/prev_close), intraday=ln(close/open)",
+          "2. 各滚动求和 w 日",
+          "3. 因子=rank(隔夜累积 − 日内累积)"
+        ],
+        "python_signature": "def overnight_intraday_tug(panel: pd.DataFrame, window: int = 21) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.03 to +0.08",
+        "drawdown_impact": "中性(去相关分散)",
+        "turnover": "月度20-40%",
+        "decay_halflife": "10-30天"
+      },
+      "test_logic": [],
+      "priority": "P5",
+      "dependencies": [
+        "F012"
+      ],
+      "estimated_effort": "1h",
+      "decorrelation_note": "区别于 F012 单日跳空：本因子是 21 日累积的隔夜−日内分量。"
+    },
+    {
+      "id": "F039",
+      "name": "换手率变异系数",
+      "category": "流动性二阶矩",
+      "source_papers": [
+        "Chordia, Subrahmanyam & Anshuman (2001)"
+      ],
+      "a_share_validation": "中高(A股换手波动大，流动性风险显著)",
+      "definition": {
+        "formula": "-rank( std(turnover, w) / mean(turnover, w) )",
+        "explanation": "换手率的变异系数(尺度无关二阶矩)，交易活跃度的波动性被负向定价，独立于换手水平异象。",
+        "expected_ic_sign": "positive(on -CV)",
+        "expected_ic_magnitude": "0.02 - 0.04"
+      },
+      "required_fields": [
+        "turnover"
+      ],
+      "derived_fields": [
+        "turnover_cv"
+      ],
+      "calculation": {
+        "steps": [
+          "1. 滚动 std(turnover)/mean(turnover)",
+          "2. 因子=-rank(CV)",
+          "缺 turnover 时用 volume/mcap 代理"
+        ],
+        "python_signature": "def turnover_cv(panel: pd.DataFrame, window: int = 60) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.02 to +0.04",
+        "sharpe_lift": "+0.03 to +0.08",
+        "drawdown_impact": "中性(去相关分散)",
+        "turnover": "月度20-40%",
+        "decay_halflife": "10-30天"
+      },
+      "test_logic": [],
+      "priority": "P5",
+      "dependencies": [
+        "F018"
+      ],
+      "estimated_effort": "1h",
+      "decorrelation_note": "区别于 F018 换手水平异常：CV 是尺度无关的二阶矩。"
+    },
+    {
+      "id": "F040",
+      "name": "隔夜跳空方差占比",
+      "category": "区间波动/风险构成",
+      "source_papers": [
+        "Parkinson (1980)",
+        "隔夜/日内方差分解"
+      ],
+      "a_share_validation": "中(A股开盘跳空频繁，隔夜风险占比信息量足)",
+      "definition": {
+        "formula": "rank( overnight_var / (overnight_var + intraday_var) )",
+        "explanation": "隔夜方差 var(ln(open/prev_close)) 与日内 Parkinson 方差 (ln(H/L))^2/(4ln2) 的尺度无关占比。首个使用 high-low 区间的因子，作为比值与波动水平去相关。",
+        "expected_ic_sign": "empirical",
+        "expected_ic_magnitude": "0.01 - 0.03"
+      },
+      "required_fields": [
+        "open",
+        "high",
+        "low",
+        "close"
+      ],
+      "derived_fields": [
+        "overnight_var",
+        "parkinson_var"
+      ],
+      "calculation": {
+        "steps": [
+          "1. overnight=ln(open/prev_close)，滚动方差=隔夜方差",
+          "2. Parkinson=(ln(H/L))^2/(4ln2)，滚动均值=日内方差",
+          "3. share=隔夜/(隔夜+日内)",
+          "4. 因子=rank(share)"
+        ],
+        "python_signature": "def overnight_variance_share(panel: pd.DataFrame, window: int = 21) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.03",
+        "sharpe_lift": "+0.03 to +0.08",
+        "drawdown_impact": "中性(去相关分散)",
+        "turnover": "月度20-40%",
+        "decay_halflife": "10-30天"
+      },
+      "test_logic": [],
+      "priority": "P5",
+      "dependencies": [
+        "F006"
+      ],
+      "estimated_effort": "1h",
+      "decorrelation_note": "区别于 F006 特质波动(水平)：本因子是尺度无关的方差构成比。合成随机面板会人为抬高相关，实盘截面数据目标<0.4。"
+    },
+    {
+      "id": "F041",
+      "name": "水下时间/回撤持续期",
+      "category": "路径风险",
+      "source_papers": [
+        "Path-dependent risk factors (2023)",
+        "Max drawdown literature"
+      ],
+      "a_share_validation": "中(A股弱势股滞后修复)",
+      "definition": {
+        "formula": "rank( fraction of last w days where close < running_max(close, w) )",
+        "explanation": "价格处于近端高水位下方的时长占比。刻画回撤的持续期(路径)，区别于回撤幅度(F036)。",
+        "expected_ic_sign": "empirical",
+        "expected_ic_magnitude": "0.01 - 0.03"
+      },
+      "required_fields": [
+        "close"
+      ],
+      "derived_fields": [
+        "time_under_water"
+      ],
+      "calculation": {
+        "steps": [
+          "1. 滚动 running_max(close)",
+          "2. 统计 close<running_max 的天数占比",
+          "3. 因子=rank(占比)"
+        ],
+        "python_signature": "def time_under_water(panel: pd.DataFrame, window: int = 60) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.03",
+        "sharpe_lift": "+0.03 to +0.08",
+        "drawdown_impact": "中性(去相关分散)",
+        "turnover": "月度20-40%",
+        "decay_halflife": "10-30天"
+      },
+      "test_logic": [],
+      "priority": "P5",
+      "dependencies": [
+        "F036"
+      ],
+      "estimated_effort": "1h",
+      "decorrelation_note": "区别于 F036 回撤幅度：本因子度量持续期(时长)而非深度。随机游走面板会使回撤族因子人为相关，实盘目标<0.4。"
+    },
+    {
+      "id": "F042",
+      "name": "非流动性变化",
+      "category": "流动性变化/时变风险",
+      "source_papers": [
+        "Amihud (2002)",
+        "Time-varying illiquidity literature"
+      ],
+      "a_share_validation": "中(A股流动性时变强，变化量含增量信息)",
+      "definition": {
+        "formula": "rank( (illiq_recent - illiq_prior) / illiq_prior )",
+        "explanation": "Amihud 非流动性的近段与前段(非重叠)变化率。刻画流动性风险的重定价/注意力迁移，超出静态 Amihud 水平(F011)。",
+        "expected_ic_sign": "empirical",
+        "expected_ic_magnitude": "0.01 - 0.03"
+      },
+      "required_fields": [
+        "close",
+        "amount"
+      ],
+      "derived_fields": [
+        "amihud",
+        "delta_amihud"
+      ],
+      "calculation": {
+        "steps": [
+          "1. illiq=|ret|/amount",
+          "2. recent=近 w 日均值, prior=其前 w 日均值(delay w)",
+          "3. delta=(recent−prior)/prior",
+          "4. 因子=rank(delta)",
+          "缺 amount 时用 volume*close 代理"
+        ],
+        "python_signature": "def delta_amihud(panel: pd.DataFrame, window: int = 21) -> pd.Series"
+      },
+      "expected_effect": {
+        "ic_improvement": "+0.01 to +0.03",
+        "sharpe_lift": "+0.03 to +0.08",
+        "drawdown_impact": "中性(去相关分散)",
+        "turnover": "月度20-40%",
+        "decay_halflife": "10-30天"
+      },
+      "test_logic": [],
+      "priority": "P5",
+      "dependencies": [
+        "F011"
+      ],
+      "estimated_effort": "1h",
+      "decorrelation_note": "区别于 F011 Amihud 水平：本因子是变化量(趋势)而非水平。"
     }
   ],
   "factor_groups": {
@@ -1785,6 +2067,22 @@
       "F026",
       "F029",
       "F030"
+    ],
+    "P4_academic": [
+      "F031",
+      "F032",
+      "F033",
+      "F034",
+      "F035",
+      "F036"
+    ],
+    "P5_decorrelated": [
+      "F037",
+      "F038",
+      "F039",
+      "F040",
+      "F041",
+      "F042"
     ]
   },
   "implementation_plan": {
