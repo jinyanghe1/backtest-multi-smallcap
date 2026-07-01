@@ -912,6 +912,74 @@ def delta_amihud(panel: pd.DataFrame, window: int = 21) -> pd.Series:
     return rank(delta)
 
 
+def price_delay(panel: pd.DataFrame, window: int = 120, n_lags: int = 4) -> pd.Series:
+    """F043: Price delay (speed of information diffusion).
+
+    Formula: delay = 1 - R2_restricted / R2_full
+             restricted:  r_i = a + b0 * r_m
+             full:        r_i = a + b0 * r_m + sum_{k=1..K} bk * r_m(-k)
+             market proxy r_m = cross-sectional mean return.
+    Logic: Stocks whose prices respond to market-wide information with a lag
+           (high delay) are under-attended and earn a premium for slow
+           information diffusion (Hou & Moskowitz 2005, RFS). A distinct
+           information-diffusion family, orthogonal to momentum/volatility.
+    Expected IC: positive, IC ~ 0.01-0.03
+
+    Note: per-symbol rolling nested OLS; intended for research/moderate
+    universes rather than the full survivorship panel in a hot loop.
+    """
+    close = panel["close"]
+    ret = close.groupby(level="symbol", group_keys=False).pct_change()
+    market = ret.groupby(level="date").transform("mean")
+
+    frame = pd.DataFrame({"y": ret, "m0": market})
+    for k in range(1, n_lags + 1):
+        frame[f"m{k}"] = delay(market, k, group_level="symbol")
+
+    min_p = max(30, window // 2)
+    values = pd.Series(np.nan, index=panel.index, dtype=float)
+
+    for symbol, sub in frame.groupby(level="symbol", group_keys=False):
+        sub = sub.sort_index(level="date")
+        arr = sub.to_numpy(dtype=float)  # cols: y, m0, m1..mK
+        n = len(arr)
+        out = np.full(n, np.nan)
+        y_all = arr[:, 0]
+        xfull_all = arr[:, 1:]  # m0, m1..mK
+
+        for end in range(min_p - 1, n):
+            start = end - window + 1
+            if start < 0:
+                start = 0
+            y = y_all[start:end + 1]
+            xf = xfull_all[start:end + 1]
+            mask = ~np.isnan(y) & ~np.isnan(xf).any(axis=1)
+            if mask.sum() < min_p:
+                continue
+            yv = y[mask]
+            xv = xf[mask]
+            ss_tot = float(((yv - yv.mean()) ** 2).sum())
+            if ss_tot <= 0:
+                continue
+
+            m0 = xv[:, 0]
+            corr = np.corrcoef(yv, m0)[0, 1] if np.std(m0) > 0 else np.nan
+            if not np.isfinite(corr):
+                continue
+            r2_restr = corr * corr
+
+            design = np.column_stack([np.ones(len(yv)), xv])
+            beta, *_ = np.linalg.lstsq(design, yv, rcond=None)
+            resid = yv - design @ beta
+            r2_full = 1.0 - float(resid @ resid) / ss_tot
+            if r2_full > 1e-6:
+                out[end] = 1.0 - r2_restr / r2_full
+
+        values.loc[sub.index] = out
+
+    return rank(values)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Factor registry for automated discovery
 # ═══════════════════════════════════════════════════════════════════════════
@@ -965,6 +1033,7 @@ FACTOR_REGISTRY = {
     "F040": overnight_variance_share,
     "F041": time_under_water,
     "F042": delta_amihud,
+    "F043": price_delay,
 }
 
 

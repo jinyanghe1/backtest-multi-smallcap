@@ -23,6 +23,7 @@ from tools.backtest_mvp.factors.factor_library import (
     overnight_variance_share,
     time_under_water,
     delta_amihud,
+    price_delay,
     skewness_avoidance,
     downside_beta,
     overnight_gap,
@@ -30,6 +31,7 @@ from tools.backtest_mvp.factors.factor_library import (
     amihud_illiquidity,
     idiosyncratic_volatility,
     trailing_max_drawdown,
+    momentum_quality,
 )
 
 
@@ -40,6 +42,7 @@ NEW_FACTORS = [
     overnight_variance_share,
     time_under_water,
     delta_amihud,
+    price_delay,
 ]
 
 
@@ -244,6 +247,27 @@ def test_f042_rising_illiquidity_scores_higher():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# F043 price delay: a stock that responds to the market with a lag scores higher
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_f043_lagged_responder_scores_higher_delay():
+    rng = np.random.default_rng(0)
+    n = 260
+    dates = pd.bdate_range("2020-01-01", periods=n)
+    r_m = rng.normal(0.0, 0.02, n)
+    cols = {}
+    for i in range(8):  # market-driving fillers so cross-sectional mean ~ r_m
+        cols[f"M{i}"] = 100 * np.cumprod(1 + r_m + rng.normal(0, 0.001, n))
+    r_contemp = r_m.copy()
+    r_lagged = np.r_[0.0, 0.0, r_m[:-2]]  # responds with a 2-day lag
+    cols["CONTEMP"] = 100 * np.cumprod(1 + r_contemp + rng.normal(0, 0.001, n))
+    cols["LAGGED"] = 100 * np.cumprod(1 + r_lagged + rng.normal(0, 0.001, n))
+    close = pd.DataFrame(cols, index=dates)
+    result = price_delay(_panel_from_close(close), window=120).xs(dates[-1], level="date")
+    assert result["LAGGED"] > result["CONTEMP"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # No-lookahead: earlier factor values are unaffected by future rows
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -254,6 +278,7 @@ def test_f042_rising_illiquidity_scores_higher():
         (turnover_cv, {"window": 30}),
         (time_under_water, {"window": 60}),
         (delta_amihud, {"window": 21}),
+        (price_delay, {"window": 90}),
     ],
 )
 def test_future_rows_do_not_change_earlier_factor_values(factor, kwargs):
@@ -287,6 +312,7 @@ def test_new_factors_have_low_correlation_with_nearest_existing_factors():
         "F040-F006": (overnight_variance_share(panel), idiosyncratic_volatility(panel)),
         "F041-F036": (time_under_water(panel), trailing_max_drawdown(panel)),
         "F042-F011": (delta_amihud(panel), amihud_illiquidity(panel)),
+        "F043-F025": (price_delay(panel), momentum_quality(panel)),
     }
     correlations = {}
     for name, (new_factor, old_factor) in pairs.items():
@@ -301,13 +327,13 @@ def test_new_factors_have_low_correlation_with_nearest_existing_factors():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_p5_factors_registered():
-    for fid in ["F037", "F038", "F039", "F040", "F041", "F042"]:
+    for fid in ["F037", "F038", "F039", "F040", "F041", "F042", "F043"]:
         assert fid in FACTOR_REGISTRY
-    assert len(FACTOR_REGISTRY) == 42
+    assert len(FACTOR_REGISTRY) == 43
 
 
 def test_compute_all_factors_includes_p5():
     panel = _random_panel(days=200, symbols=6)
     df = compute_all_factors(panel)
-    for fid in ["F037", "F038", "F039", "F040", "F041", "F042"]:
+    for fid in ["F037", "F038", "F039", "F040", "F041", "F042", "F043"]:
         assert fid in df.columns
